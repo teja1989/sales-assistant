@@ -21,11 +21,15 @@ export function Search() {
       setScenarios(list);
       const preset = new URLSearchParams(window.location.search).get("scenario");
       const found = list.find((s) => s.id === preset);
-      if (found) setQuery(found.search_query);
+      if (found) {
+        // Launched from the demo launcher: run the search right away so the handoff card is ready.
+        setQuery(found.search_query);
+        void search(found.search_query, found.id);
+      }
     });
   }, []);
 
-  async function search(q: string) {
+  async function search(q: string, scenarioId?: string) {
     const text = q.trim();
     if (!text) return;
     setBusy(true);
@@ -33,7 +37,7 @@ export function Search() {
     setMatch(null);
     setSubmitted(text);
     try {
-      const res = await api.handoff(text);
+      const res = await api.handoff(text, scenarioId);
       setMatch({ token: res.token, scenario: res.scenario });
     } catch (err) {
       setError(err instanceof ApiError && err.status === 404

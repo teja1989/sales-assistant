@@ -2,6 +2,7 @@
 # ($800 usual + $200 valued-customer bonus), order preview, one-tap order.
 id: device-upgrade
 title: "Looking at the iPhone 18 Pro"
+demo_order: 9
 description: "Device facts from Apple's announcement, a personalized trade-in offer ($800 usual + $200 valued-customer bonus), previewed and ordered."
 intent: device
 search_query: "apple iphone 18 pro price and specs"

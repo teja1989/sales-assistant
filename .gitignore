@@ -7,7 +7,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-web/node_modules/
+web/node_modules
 web/package-lock.json.bak
 app/static/
 .DS_Store

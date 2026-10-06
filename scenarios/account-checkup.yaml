@@ -3,6 +3,7 @@
 # turn on autopay, schedule a gateway update. Reminders for things only the customer can do.
 id: account-checkup
 title: "Why is my bill going up?"
+demo_order: 1
 description: "Full account review after sign-in: what's good, what needs attention, and one-tap fixes that cut the bill by about $30/month."
 intent: account
 search_query: "why is my internet bill going up next month"

@@ -3,6 +3,7 @@
 # mobile), preview the order, one-tap confirm.
 id: gamer-upgrade
 title: "Online games lag every evening"
+demo_order: 6
 description: "Healthy line saturated by gaming, downloads and live streaming. Turbo 800 with a free year of mobile, previewed and ordered in one tap."
 intent: speed
 search_query: "fix lag online gaming home internet evenings"

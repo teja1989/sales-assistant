@@ -17,7 +17,8 @@ A scenario is one YAML file in `scenarios/`. No code changes. It is loaded at st
 | Field | Purpose |
 |---|---|
 | `id` | Unique slug |
-| `title`, `description` | Shown in the UI |
+| `title`, `description` | Shown in the UI (launcher card, sign-in account picker) |
+| `demo_order` | Position on the home-page demo launcher and sign-in picker (lower first; default 100) |
 | `intent` | `connectivity`, `speed`, `wifi`, `device`, `alert`, `account` or `general`; goes into the system prompt and steers the first tools called |
 | `search_query` | Example search; shown as a chip on the search page |
 | `match_keywords` | Words/phrases that route a typed search to this scenario (phrases score higher) |

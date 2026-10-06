@@ -34,6 +34,7 @@ class Scenario(BaseModel):
 
     id: str
     title: str
+    demo_order: int = 100  # position on the home-page demo launcher (lower first)
     description: str
     intent: Intent
     search_query: str
@@ -73,6 +74,7 @@ class Scenario(BaseModel):
         return {
             "id": self.id,
             "title": self.title,
+            "demo_order": self.demo_order,
             "description": self.description,
             "intent": self.intent,
             "search_query": self.search_query,
@@ -112,6 +114,11 @@ def load_scenarios(directory: Path, known_tools: set[str] | None = None) -> dict
     if not scenarios:
         raise ScenarioError(f"No scenarios found in {directory}")
     return scenarios
+
+
+def in_demo_order(scenarios: dict[str, Scenario]) -> list[Scenario]:
+    """Scenarios in launcher order (demo_order, then id)."""
+    return sorted(scenarios.values(), key=lambda s: (s.demo_order, s.id))
 
 
 def match_scenario(scenarios: dict[str, Scenario], query: str) -> Scenario | None:

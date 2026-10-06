@@ -54,6 +54,7 @@ class DemoAccount:
     name: str
     plan: str
     hint: str  # scenario id this account belongs to (used as login_hint)
+    situation: str = ""  # what this demo customer is dealing with, shown on the account picker
 
 
 @dataclass
@@ -260,10 +261,17 @@ button.allow{background:#1d2330;color:#fff;border-color:#1d2330}
 
 def _consent_page(accounts: list[DemoAccount], hint: str, requested: list[str], signed: str) -> str:
     esc = html.escape
+
+    def label(a: DemoAccount) -> str:
+        text = f"{a.name} · {a.plan}"
+        if a.situation:
+            text += f" — {a.situation}"
+        if a.hint == hint:
+            text += " (matches this search)"
+        return esc(text)
+
     options = "".join(
-        f'<option value="{esc(a.subject)}"{" selected" if a.hint == hint else ""}>'
-        f"{esc(a.name)} ({esc(a.plan)})</option>"
-        for a in accounts
+        f'<option value="{esc(a.subject)}"{" selected" if a.hint == hint else ""}>{label(a)}</option>' for a in accounts
     )
     manage = ""
     if "account:manage" in requested:
@@ -282,6 +290,8 @@ def _consent_page(accounts: list[DemoAccount], hint: str, requested: list[str], 
 <input type="hidden" name="request" value="{esc(signed)}">
 <label for="account">Account (demo)</label>
 <select id="account" name="account">{options}</select>
+<p class="small">Preselected to match the search. Pick another customer to see how Tidelink answers the same
+question with their account; the signed-in account always decides whose data is shown.</p>
 <fieldset><legend>Tidelink will be able to</legend>
 <label class="scope"><input type="checkbox" checked disabled> <span>{esc(SCOPES["account:read"])} (required)</span></label>
 {manage}

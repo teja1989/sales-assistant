@@ -3,6 +3,7 @@
 # preview, one-tap order.
 id: streaming-household
 title: "4K streams buffer at night"
+demo_order: 7
 description: "Five 4K TVs plus cloud backups max out a Gigabit plan at peak. Ultra 2 Gig recommended, with the free mobile year."
 intent: speed
 search_query: "4k streaming buffering on multiple tvs at night"

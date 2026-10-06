@@ -2,6 +2,7 @@
 # Ideal outcome: say honestly a faster plan won't help, recommend a mesh pod instead.
 id: weak-wifi
 title: "Slow internet upstairs"
+demo_order: 5
 description: "Plan has plenty of headroom; one room has weak Wi-Fi. The assistant recommends a mesh pod, not a pricier plan."
 intent: wifi
 search_query: "internet slow in upstairs bedroom"

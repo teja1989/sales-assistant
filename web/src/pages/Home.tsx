@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { Link } from "../router";
+import { Link, navigate } from "../router";
 import { BrandMark } from "../components/BrandMark";
 import type { AppConfig, ScenarioView } from "../types";
 
@@ -51,21 +51,95 @@ export function Home({ config }: { config: AppConfig | null }) {
           )}
         </section>
 
-        <section className="scenario-list" aria-labelledby="scenarios-heading">
-          <h2 id="scenarios-heading">Demo scenarios</h2>
-          <ul>
-            {scenarios.map((s) => (
-              <li key={s.id}>
-                <Link to={`/search?scenario=${encodeURIComponent(s.id)}`} className="scenario-row">
-                  <span className="scenario-title">{s.title}</span>
-                  <span className="scenario-desc">{s.description}</span>
-                  <span className="scenario-query">“{s.search_query}”</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <DemoLauncher scenarios={scenarios} />
       </main>
     </div>
+  );
+}
+
+const INTENT_LABEL: Record<string, string> = {
+  account: "Account",
+  connectivity: "Fix",
+  speed: "Upgrade",
+  wifi: "Fix + right product",
+  device: "Device sale",
+  alert: "Proactive care",
+  general: "General",
+};
+
+/**
+ * Demo launcher: one card per simulated customer, in the order of the demo script. "Start from search"
+ * tells the full story (external search → handoff → sign-in); "Skip to sign-in" jumps straight to the
+ * chat's sign-in step with the matching account preselected.
+ */
+function DemoLauncher({ scenarios }: { scenarios: ScenarioView[] }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function skipToSignIn(s: ScenarioView) {
+    setBusy(s.id);
+    setError(null);
+    try {
+      const res = await api.handoff(s.search_query, s.id);
+      navigate(`/chat#ctx=${encodeURIComponent(res.token)}&s=${encodeURIComponent(res.scenario.id)}`);
+    } catch {
+      setError("Couldn't start that demo. Check that the app is running and try again.");
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="launcher" aria-labelledby="launcher-heading">
+      <div className="launcher-head">
+        <h2 id="launcher-heading">Demo launcher</h2>
+        <p>
+          Each card is a simulated customer signed in with their own account. Run them top to bottom to follow the
+          demo script.
+        </p>
+      </div>
+      {error && (
+        <p className="search-error" role="alert">
+          {error}
+        </p>
+      )}
+      <ol className="launcher-grid">
+        {scenarios.map((s, i) => {
+          const name = s.persona?.first_name ?? "Customer";
+          return (
+            <li key={s.id} className="persona-card">
+              <div className="persona-top">
+                <span className={`persona-badge tone-${i % 5}`} aria-hidden="true">
+                  {name.charAt(0)}
+                </span>
+                <div className="persona-who">
+                  <strong>{name}</strong>
+                  <span>{s.persona?.plan}</span>
+                </div>
+                <span className="persona-step" aria-label={`Step ${i + 1}`}>
+                  {i + 1}
+                </span>
+              </div>
+              <span className="persona-tag">{INTENT_LABEL[s.intent] ?? s.intent}</span>
+              <h3>{s.title}</h3>
+              <p className="persona-desc">{s.description}</p>
+              <p className="persona-query">“{s.search_query}”</p>
+              <div className="persona-actions">
+                <Link to={`/search?scenario=${encodeURIComponent(s.id)}`} className="btn btn-primary btn-sm">
+                  Start from search
+                </Link>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={busy !== null}
+                  onClick={() => void skipToSignIn(s)}
+                >
+                  {busy === s.id ? "Opening" : "Skip to sign-in"}
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }

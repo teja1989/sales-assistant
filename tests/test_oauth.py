@@ -236,3 +236,27 @@ def test_kickoff_stream_is_valid_sse(client) -> None:
     res = client.post(f"/api/sessions/{sid}/turn", json={"kickoff": True})
     assert res.headers["content-type"].startswith("text/event-stream")
     assert parse_sse(res.text)[-1]["type"] == "done"
+
+
+def test_account_picker_labels_situation_and_preselects_match(client) -> None:
+    _, challenge = pkce()
+    page = client.get(f"/oauth/authorize?{urlencode(authorize_params(challenge, login_hint='scenario:gamer-upgrade'))}")
+    assert page.status_code == 200
+    html_text = page.text
+    selected = [line for line in html_text.split("<option") if " selected" in line.split(">")[0]]
+    assert len(selected) == 1
+    assert "Jordan" in selected[0] and "Online games lag every evening" in selected[0]
+    assert "(matches this search)" in selected[0]
+    assert html_text.count("(matches this search)") == 1
+    # Launcher order: the account checkup persona comes first.
+    assert html_text.index("Morgan") < html_text.index("Dana")
+
+
+def test_scenarios_api_has_persona_in_demo_order_without_ids(client) -> None:
+    items = client.get("/api/scenarios").json()["scenarios"]
+    orders = [s["demo_order"] for s in items]
+    assert orders == sorted(orders)
+    assert items[0]["id"] == "account-checkup"
+    for s in items:
+        assert set(s["persona"]) == {"first_name", "plan"}
+    assert "LUM-" not in str(items)

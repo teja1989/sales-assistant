@@ -2,6 +2,7 @@
 # Ideal outcome: explain cause and ETA, proactively apply a credit, no reboot, no upsell.
 id: area-outage
 title: "Internet is down"
+demo_order: 3
 description: "Area outage. The assistant explains cause and ETA, applies a goodwill credit and avoids a pointless reboot or upsell."
 intent: connectivity
 search_query: "my internet is not working right now"

@@ -2,6 +2,7 @@
 # Ideal outcome: diagnose, remote reboot (customer confirms), fixed. No upsell.
 id: gateway-fault
 title: "Internet keeps dropping"
+demo_order: 2
 description: "Gateway firmware fault causing repeated drops. Fixed by a confirmed remote reboot. Upsell is blocked."
 intent: connectivity
 search_query: "why does my home internet keep dropping"

@@ -16,11 +16,13 @@ export interface AppConfig {
 export interface ScenarioView {
   id: string;
   title: string;
+  demo_order?: number;
   description: string;
   intent: string;
   search_query: string;
   suggested_replies: string[];
   data_sources: Record<string, Source>;
+  persona?: { first_name: string; plan: string };
 }
 
 export interface SessionInfo {

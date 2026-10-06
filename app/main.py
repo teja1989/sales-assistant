@@ -36,7 +36,7 @@ from app.metrics import Metrics
 from app.oauth import DemoAccount, MockIdentityProvider, OAuthError
 from app.orchestrator import Orchestrator
 from app.prompts import build_system_prompt
-from app.scenarios import Scenario, load_scenarios, match_scenario
+from app.scenarios import Scenario, in_demo_order, load_scenarios, match_scenario
 from app.security import (
     BasicAuthMiddleware,
     BearerTokenMiddleware,
@@ -129,11 +129,17 @@ async def api_scenarios(request: Request) -> Response:
     ctx = _state(request)
     override = ctx.settings.data_source_override
     items = []
-    for sc in ctx.scenarios.values():
+    for sc in in_demo_order(ctx.scenarios):
         view = sc.public_view()
         view["data_sources"] = {t: sc.source_for(t, override) for t in sc.tools}
+        # Demo persona for the launcher: first name and plan only, never ids or contact data.
+        view["persona"] = {"first_name": str(sc.customer["first_name"]), "plan": _plan_name(ctx, sc)}
         items.append(view)
     return JSONResponse({"scenarios": items})
+
+
+def _plan_name(ctx: AppState, scenario: Scenario) -> str:
+    return str(ctx.store.plan(str(scenario.customer["plan_id"]))["name"])
 
 
 async def api_handoff(request: Request) -> Response:
@@ -358,12 +364,12 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
         specs = await gateway.load_specs()
         ctx.scenarios = load_scenarios(settings.scenarios_dir, set(specs))
         accounts = []
-        for scenario in ctx.scenarios.values():
+        for scenario in in_demo_order(ctx.scenarios):
             store.add_customer(scenario.customer)  # base copies, reachable via /mcp for tooling demos
             cid = str(scenario.customer["id"])
             ctx.customers[cid] = scenario.customer
             plan = store.plan(scenario.customer["plan_id"])["name"]
-            accounts.append(DemoAccount(cid, str(scenario.customer["first_name"]), plan, scenario.id))
+            accounts.append(DemoAccount(cid, str(scenario.customer["first_name"]), plan, scenario.id, scenario.title))
         ctx.idp.set_accounts(accounts)
         log.info(
             "Started %s v%s: env=%s llm=%s scenarios=%s live_mcp=%s",

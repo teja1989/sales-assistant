@@ -1,6 +1,7 @@
 # Severe storm forecast. Proactive care: free 48-hour mobile data pass, one tap, then "stay safe".
 id: storm-alert
 title: "Storm coming: will I stay connected?"
+demo_order: 8
 description: "Severe storm forecast for the area. The assistant activates a free 48-hour unlimited mobile data pass in one tap."
 intent: alert
 search_query: "storm warning tonight will my internet keep working"

@@ -2,6 +2,13 @@
 
 Setup: app running (`make run` with Azure, or `make run-mock`). Two tabs: **Home** and **Impact** (`/dashboard`). Click **Reset numbers** on the dashboard first.
 
+**Choosing a customer.** The home page **Demo launcher** has one numbered card per simulated customer, in the order of this script. Each card has two buttons:
+
+- **Start from search**: opens the simulated search with the question already searched, so you only click **Continue with Tidelink**. Use it for the first run to tell the full handoff story.
+- **Skip to sign-in**: goes straight to the chat's sign-in step. Use it for the later scenarios to save time.
+
+On the sign-in page the matching account is preselected and marked "(matches this search)". Picking another customer is allowed: the signed-in account always decides whose data is shown, which is a good way to prove the assistant isn't scripted (for example, Morgan asking about gaming lag is told his plan already has headroom). Some mixes are thin because each scenario limits which tools are available.
+
 ## 1. The problem (30 s)
 
 Customers ask AI assistants about their internet before they ever call us. Today that ends in a generic answer or a phone queue. This prototype shows the handoff into our own assistant, connected to our systems through MCP.

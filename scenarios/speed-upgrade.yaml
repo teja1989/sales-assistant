@@ -2,6 +2,7 @@
 # Ideal outcome: verify health, show real usage, recommend the right tier, order on confirm.
 id: speed-upgrade
 title: "I want faster internet"
+demo_order: 4
 description: "Healthy line, household regularly maxes out its plan. Data-backed upgrade recommendation and a confirmed order."
 intent: speed
 search_query: "how to get faster internet speed at home"
