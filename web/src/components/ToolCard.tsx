@@ -2,7 +2,10 @@ import type { ChatItem, Json } from "../types";
 
 type ToolItem = Extract<ChatItem, { kind: "tool" }>;
 
-const money = (v: unknown) => (typeof v === "number" ? `$${v.toFixed(2)}` : "");
+const money = (v: unknown) =>
+  typeof v === "number"
+    ? `${v < 0 ? "-" : ""}$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : "";
 const num = (v: unknown) => (typeof v === "number" ? v : undefined);
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
 const obj = (v: unknown) => (v && typeof v === "object" ? (v as Json) : {});
@@ -109,10 +112,109 @@ function Offers({ data }: { data: Json }) {
                   {money(promo.promo_monthly_price)}/mo for {str(promo.months)} months
                 </div>
               )}
+              {o.bundle ? <div className="offer-bundle">+ {str(obj(o.bundle).name)}</div> : null}
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+function DeviceOffer({ data }: { data: Json }) {
+  const device = obj(data.device);
+  const pricing = obj(data.pricing);
+  const trade = obj(data.trade_in);
+  const offer = obj(data.offer);
+  const highlights = (Array.isArray(device.highlights) ? device.highlights : []) as string[];
+  return (
+    <div className="tool-body">
+      <div className="device-head">
+        <span className="offer-name">{str(device.name)}</span>
+        <span className="offer-price">
+          {money(pricing.full_price)}
+          <span> from</span>
+        </span>
+      </div>
+      <ul className="device-highlights">
+        {highlights.map((h) => (
+          <li key={h}>{h}</li>
+        ))}
+      </ul>
+      {trade.eligible ? (
+        <dl className="receipt">
+          <div>
+            <dt>Trade-in: {str(trade.current_device)}</dt>
+            <dd>{money(trade.usual_credit)}</dd>
+          </div>
+          <div className="receipt-bonus">
+            <dt>Valued-customer bonus</dt>
+            <dd>+{money(trade.valued_customer_bonus_credit)}</dd>
+          </div>
+          <div className="receipt-total">
+            <dt>Your price after trade-in</dt>
+            <dd>
+              {money(offer.price_after_trade_in)} or {money(offer.monthly_installment_after_trade_in)}/mo
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+      <p className="source-note">Device facts: {str(device.facts_source)}. Trade-in and financing simulated.</p>
+    </div>
+  );
+}
+
+function Alerts({ data }: { data: Json }) {
+  const alerts = (Array.isArray(data.alerts) ? data.alerts : []) as Json[];
+  if (!alerts.length) return <p className="tool-summary">No weather or network alerts for {str(data.service_area)}.</p>;
+  const a = alerts[0];
+  const courtesy = obj(data.courtesy);
+  return (
+    <div className="tool-body">
+      <p className="verdict verdict-warn">{str(a.headline)}</p>
+      <p className="tool-summary">
+        {str(data.service_area)}, {str(a.window)}. {str(a.expected_impact)}.
+      </p>
+      {courtesy.storm_data_pass_eligible ? (
+        <p className="tool-summary">Eligible: free unlimited mobile data for {str(courtesy.hours)} hours.</p>
+      ) : null}
+    </div>
+  );
+}
+
+function Preview({ data }: { data: Json }) {
+  const items = (Array.isArray(data.line_items) ? data.line_items : []) as Json[];
+  const benefits = (Array.isArray(data.included_benefits) ? data.included_benefits : []) as string[];
+  return (
+    <div className="tool-body">
+      <dl className="receipt">
+        {items.map((it, i) => (
+          <div key={i}>
+            <dt>{str(it.label)}</dt>
+            <dd>{it.worth_monthly_price != null ? `Free (worth ${money(it.worth_monthly_price)}/mo)` : money(it.amount)}</dd>
+          </div>
+        ))}
+        {data.monthly_installment != null && (
+          <div>
+            <dt>Monthly installment</dt>
+            <dd>
+              {money(data.monthly_installment)} × {str(data.installment_months)}
+            </dd>
+          </div>
+        )}
+        <div className="receipt-total">
+          <dt>New monthly bill</dt>
+          <dd>{money(data.new_monthly_price)}</dd>
+        </div>
+        <div>
+          <dt>Due today</dt>
+          <dd>{money(data.due_today)}</dd>
+        </div>
+      </dl>
+      {benefits.length > 0 && <p className="offer-bundle">Included: {benefits.join("; ")}</p>}
+      <p className="source-note">
+        Quote {str(data.quote_id)}. {str(data.note)}
+      </p>
     </div>
   );
 }
@@ -132,10 +234,21 @@ function Result({ tool, data }: { tool: string; data: Json }) {
         Visit booked: {str(data.appointment_window)} (ticket {str(data.ticket_id)}).
       </p>
     );
-  if (tool === "submit_upgrade_order")
+  if (tool === "submit_upgrade_order") {
+    const benefits = (Array.isArray(data.included_benefits) ? data.included_benefits : []) as string[];
+    return (
+      <>
+        <p className="tool-summary">
+          Order {str(data.order_id)}: {str(data.item)}. {str(data.effective)}.
+        </p>
+        {benefits.length > 0 && <p className="offer-bundle">Active: {benefits.join("; ")}</p>}
+      </>
+    );
+  }
+  if (tool === "activate_storm_data_pass")
     return (
       <p className="tool-summary">
-        Order {str(data.order_id)}: {str(data.item)}. {str(data.effective)}.
+        Free unlimited data on {str(data.lines_covered)} lines for {str(data.hours)} hours. Ends automatically.
       </p>
     );
   if (tool === "get_customer_profile") {
@@ -193,6 +306,12 @@ export function ToolCard({ item }: { item: ToolItem }) {
           <Usage data={data} />
         ) : item.tool === "get_eligible_offers" ? (
           <Offers data={data} />
+        ) : item.tool === "get_device_offer" ? (
+          <DeviceOffer data={data} />
+        ) : item.tool === "check_service_alerts" ? (
+          <Alerts data={data} />
+        ) : item.tool === "preview_order" ? (
+          <Preview data={data} />
         ) : (
           <Result tool={item.tool} data={data} />
         ))}

@@ -32,10 +32,10 @@ def build_mcp_server(store: SimStore, name: str = "lumora-network") -> MCPServer
         name,
         title="Lumora account and network tools",
         instructions=(
-            "Tools for a home-internet provider: customer profile, outage status, line "
-            "diagnostics, usage, eligible offers and actions (reboot, technician, credit, "
-            "order). Action tools change customer state; callers must get explicit customer "
-            "confirmation before invoking them."
+            "Tools for an internet and mobile provider: customer profile, outage and weather "
+            "alerts, line diagnostics, usage, plan/equipment/device offers, order preview and actions "
+            "(reboot, technician, credit, storm data pass, order). Action tools change customer state; "
+            "callers must get explicit customer confirmation before invoking them."
         ),
         version="0.1.0",
     )
@@ -97,6 +97,58 @@ def build_mcp_server(store: SimStore, name: str = "lumora-network") -> MCPServer
         return run(store.offers, customer_id, need)
 
     @server.tool(
+        title="Get device offer",
+        description=(
+            "Facts, price and the customer's personalized trade-in offer for a phone (e.g. 'iPhone 18 Pro'). "
+            "Use these facts only; do not add specs from memory. Returns an offer_id for preview_order."
+        ),
+        annotations=READ,
+    )
+    def get_device_offer(
+        customer_id: CustomerId,
+        model: Annotated[str, Field(description="Device the customer asked about.", max_length=80)],
+    ) -> dict[str, Any]:
+        return run(store.device_offer, customer_id, model)
+
+    @server.tool(
+        title="Check service alerts",
+        description=(
+            "Weather and network alerts for the customer's area (e.g. an incoming storm) and any courtesy "
+            "benefit they qualify for, such as a free storm data pass."
+        ),
+        annotations=READ,
+    )
+    def check_service_alerts(customer_id: CustomerId) -> dict[str, Any]:
+        return run(store.service_alerts, customer_id)
+
+    @server.tool(
+        title="Preview order",
+        description=(
+            "Price quote for an offer_id before ordering: line items, promos, included benefits (e.g. free "
+            "mobile year), trade-in credit, monthly before/after and amount due today. Always preview before "
+            "submit_upgrade_order."
+        ),
+        annotations=READ,
+    )
+    def preview_order(
+        customer_id: CustomerId,
+        offer_id: Annotated[
+            str, Field(description="offer_id from get_eligible_offers or get_device_offer.", max_length=64)
+        ],
+    ) -> dict[str, Any]:
+        return run(store.preview_order, customer_id, offer_id)
+
+    @server.tool(
+        title="Activate storm data pass",
+        description=(
+            "Turn on free unlimited mobile data for all lines during a storm alert (no charge). Requires confirmation."
+        ),
+        annotations=ACTION,
+    )
+    def activate_storm_data_pass(customer_id: CustomerId) -> dict[str, Any]:
+        return run(store.activate_storm_pass, customer_id)
+
+    @server.tool(
         title="Reboot gateway",
         description="Remotely restart the customer's gateway (about 2 minutes offline). Requires confirmation.",
         annotations=ACTION,
@@ -125,12 +177,15 @@ def build_mcp_server(store: SimStore, name: str = "lumora-network") -> MCPServer
 
     @server.tool(
         title="Submit order",
-        description="Place an order for an offer_id previously returned by get_eligible_offers.",
+        description=(
+            "Place the order for an offer_id (plan upgrade, Wi-Fi equipment or device) after preview_order. "
+            "Requires confirmation."
+        ),
         annotations=ACTION,
     )
     def submit_upgrade_order(
         customer_id: CustomerId,
-        offer_id: Annotated[str, Field(description="offer_id from get_eligible_offers.", max_length=64)],
+        offer_id: Annotated[str, Field(description="offer_id that was previewed.", max_length=64)],
     ) -> dict[str, Any]:
         return run(store.submit_order, customer_id, offer_id)
 

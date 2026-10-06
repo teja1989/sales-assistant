@@ -12,7 +12,7 @@ def _norm(amount: str) -> str:
     return f"{float(amount.replace(',', '')):.2f}"
 
 
-MONEY_KEY = re.compile(r"price|amount|change|discount|fee|credit|cost", re.I)
+MONEY_KEY = re.compile(r"price|amount|change|discount|fee|credit|cost|total|due|installment|charge", re.I)
 
 
 def collect_amounts(value: Any, out: set[str], key: str = "") -> None:
@@ -21,7 +21,7 @@ def collect_amounts(value: Any, out: set[str], key: str = "") -> None:
         return
     if isinstance(value, (int, float)):
         if MONEY_KEY.search(key):
-            out.add(f"{float(value):.2f}")
+            out.add(f"{abs(float(value)):.2f}")
     elif isinstance(value, dict):
         for k, v in value.items():
             collect_amounts(v, out, str(k))

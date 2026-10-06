@@ -704,6 +704,74 @@ a {
   color: var(--ink-soft);
 }
 
+.offer-bundle {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--live);
+}
+
+.device-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.device-highlights {
+  margin: 8px 0 0;
+  padding-left: 1.1em;
+  color: var(--ink-soft);
+}
+
+.receipt {
+  margin: 10px 0 0;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.receipt div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.receipt dt {
+  color: var(--ink-soft);
+}
+
+.receipt dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.receipt-bonus dd {
+  color: var(--ok);
+}
+
+.receipt-total {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+.receipt-total dt,
+.receipt-total dd {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.source-note {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
 .source {
   font-size: 0.7rem;
   font-weight: 700;
@@ -911,6 +979,7 @@ a {
 
 .trace-latency {
   margin-left: auto;
+  white-space: nowrap;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
 }
@@ -1026,6 +1095,10 @@ a {
 
 .ops {
   margin-top: 32px;
+}
+
+.ops + .ops {
+  margin-top: 24px;
 }
 
 .ops dl {

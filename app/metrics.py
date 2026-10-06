@@ -39,6 +39,8 @@ class Metrics:
             self.tool_latency_ms: dict[str, list[int]] = {}
             self.monthly_revenue_delta = 0.0
             self.credits_issued = 0.0
+            self.device_revenue = 0.0
+            self.trade_in_credits = 0.0
             self.events: deque[dict[str, Any]] = deque(maxlen=150)
 
     def _bump(self, session_id: str | None, key: str, n: int = 1) -> None:
@@ -105,6 +107,19 @@ class Metrics:
                 elif data.get("offers") and self._outcome(session_id, "offer_presented"):
                     self._bump(session_id, "offers_presented")
                     self._event(session_id, "offer_presented", ", ".join(o["name"] for o in data["offers"]))
+            elif tool == "get_device_offer" and isinstance(data.get("offer"), dict):
+                if self._outcome(session_id, "offer_presented"):
+                    self._bump(session_id, "offers_presented")
+                    self._event(session_id, "offer_presented", str(data["offer"].get("name")))
+            elif tool == "preview_order" and data.get("quote_id"):
+                self._bump(session_id, "orders_previewed")
+                self._event(session_id, "order_previewed", str(data.get("item")))
+            elif tool == "activate_storm_data_pass" and data.get("activated"):
+                self._bump(session_id, "storm_data_passes")
+                self._event(
+                    session_id, "storm_pass_activated", f"{data.get('hours')}h, {data.get('lines_covered')} lines"
+                )
+                self._resolve(session_id)
             elif tool == "reboot_gateway" and data.get("issue_resolved"):
                 if self._outcome(session_id, "truck_roll_avoided"):
                     self._bump(session_id, "truck_rolls_avoided")
@@ -121,6 +136,14 @@ class Metrics:
             elif tool == "submit_upgrade_order" and data.get("submitted") and not data.get("duplicate"):
                 self._bump(session_id, "offers_accepted")
                 self.monthly_revenue_delta += float(data.get("monthly_change") or 0)
+                if data.get("type") == "device":
+                    self._bump(session_id, "devices_sold")
+                    self.device_revenue += float(data.get("full_price") or 0)
+                    self.trade_in_credits += float(data.get("trade_in_credit") or 0)
+                if data.get("included_benefits"):
+                    self._bump(session_id, "mobile_bundles")
+                if data.get("mobile_line_added"):
+                    self._bump(session_id, "new_mobile_lines")
                 self._event(session_id, "offer_accepted", str(data.get("item")))
                 self._resolve(session_id)
 
@@ -149,6 +172,13 @@ class Metrics:
                 "offers_accepted": c["offers_accepted"],
                 "offer_conversion_rate": round(c["offers_accepted"] / presented, 3) if presented else 0.0,
                 "upsell_blocked_fault_first": c["upsell_blocked_fault_first"],
+                "orders_previewed": c["orders_previewed"],
+                "devices_sold": c["devices_sold"],
+                "device_sales_usd": round(self.device_revenue, 2),
+                "trade_in_credits_usd": round(self.trade_in_credits, 2),
+                "mobile_bundles": c["mobile_bundles"],
+                "new_mobile_lines": c["new_mobile_lines"],
+                "storm_data_passes": c["storm_data_passes"],
                 "incremental_monthly_revenue_usd": round(self.monthly_revenue_delta, 2),
                 "actions_confirmed": c["actions_confirmed"],
                 "actions_declined": c["actions_declined"],

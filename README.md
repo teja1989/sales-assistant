@@ -1,8 +1,8 @@
 # Lumora Assist
 
-A working prototype of an **MCP-connected chat assistant** for a home-internet provider. A customer searches in an external AI assistant, lands in our chat with their question already known, and the assistant uses MCP tools to **fix the problem first, then recommend an upgrade only when the data supports it**.
+A working prototype of an **MCP-connected chat assistant** for a home-internet and mobile provider. A customer searches in an external AI assistant, lands in our chat with their question already known, and the assistant uses MCP tools to **fix the problem first, then recommend an upgrade only when the data supports it**.
 
-"Lumora" is a fictional brand. All customer, network and pricing data is simulated unless you connect a live MCP server.
+"Lumora" is a fictional brand. All customer, network, pricing, trade-in and weather data is simulated unless you connect a live MCP server. iPhone 18 Pro facts (starting price, storage, chip, camera, battery, colors, availability) come from Apple's September 2026 announcement.
 
 ## What it shows
 
@@ -12,8 +12,14 @@ A working prototype of an **MCP-connected chat assistant** for a home-internet p
 | Internet is down | Area outage found; ETA explained; goodwill credit applied on confirm | Contained without an agent, no pointless reboot |
 | I want faster internet | Healthy line, usage at 97% of plan; right-sized upgrade on confirm | Data-backed upsell, incremental revenue |
 | Slow upstairs | Plan has headroom, Wi-Fi is weak; mesh pod instead of a pricier plan | Honest sale that actually fixes the issue |
+| Online games lag every evening | Gamer maxing out Plus 500; Turbo 800 at the same price for 12 months plus a free year of mobile; preview, one-tap order | Internet upsell + new mobile line |
+| 4K streams buffer at night | Five 4K TVs saturate Gigabit; Ultra 2 Gig with the free mobile year | Higher-tier upsell + bundle |
+| Storm coming | Severe storm forecast; free 48-hour unlimited mobile data in one tap; "stay safe" | Proactive care, loyalty |
+| Looking at the iPhone 18 Pro | Verified device facts + personalized trade-in ($800 usual + $200 valued-customer bonus); preview, one-tap order | Device sale |
 
-A live **impact dashboard** counts containment, truck rolls avoided, offer conversion, new monthly revenue, upsells held back until a fault was fixed, and guardrail interventions. Every number is derived from tool results and confirmed actions, never from what the model said.
+Cross-line-of-business offers: **upgrade to 800 Mbps or faster and get one Unlimited mobile line free for 12 months.** Every order goes through a **preview** (line items, new monthly bill, due today, included benefits) and a single confirmation tap. The assistant is told to be decisive: sensible defaults, at most one question per reply.
+
+A live **impact dashboard** counts containment, truck rolls avoided, offer conversion, new monthly revenue, upsells held back until a fault was fixed, devices sold, mobile bundles and new lines, storm passes, and guardrail interventions. Every number is derived from tool results and confirmed actions, never from what the model said.
 
 ## Quick start
 

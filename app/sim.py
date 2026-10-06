@@ -44,6 +44,7 @@ class SimStore:
         self.catalog = catalog or load_catalog()
         self._plans = {p["id"]: p for p in self.catalog["plans"]}
         self._equipment = {e["id"]: e for e in self.catalog["equipment"]}
+        self._devices = {d["id"]: d for d in self.catalog.get("devices", [])}
         self._customers: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
@@ -58,6 +59,7 @@ class SimStore:
         data.setdefault("orders", [])
         data.setdefault("credits", [])
         data.setdefault("tickets", [])
+        data.setdefault("benefits", [])
         with self._lock:
             self._customers[data["id"]] = data
         return data["id"]
@@ -92,7 +94,20 @@ class SimStore:
                 "monthly_price": _money(plan["monthly_price"]),
             },
             "equipment": c.get("equipment", {}),
+            "mobile": self._mobile_summary(c),
             "recent_orders": [o["order_id"] for o in c["orders"]],
+        }
+
+    @staticmethod
+    def _mobile_summary(c: dict[str, Any]) -> dict[str, Any] | None:
+        mobile = c.get("mobile")
+        if not mobile or not mobile.get("lines"):
+            return None
+        return {
+            "plan": mobile.get("plan", "Lumora Unlimited"),
+            "lines": len(mobile["lines"]),
+            "devices": [line.get("device") for line in mobile["lines"]],
+            "free_months_remaining": mobile.get("free_months_remaining", 0),
         }
 
     def area_outage(self, customer_id: str) -> dict[str, Any]:
@@ -173,6 +188,209 @@ class SimStore:
             "measured_speed_mbps": u.get("measured_speed_mbps"),
         }
 
+    def _bundle_for(self, plan: dict[str, Any]) -> dict[str, Any] | None:
+        promo = self.catalog.get("bundle_promos", {}).get("mobile_free_year")
+        if not promo or plan["download_mbps"] < promo["min_download_mbps"]:
+            return None
+        return {
+            "name": promo["description"],
+            "months": promo["months"],
+            "worth_monthly_price": _money(promo["worth_monthly_price"]),
+        }
+
+    # ------------------------------------------------------------ mobile + devices
+    def _find_device(self, model: str) -> dict[str, Any]:
+        text = " ".join(model.lower().replace("-", " ").split())
+        for device in self._devices.values():
+            names = [device["name"].lower(), *device.get("match", [])]
+            if any(name in text or text in name for name in names if len(text) >= 3):
+                return device
+        available = ", ".join(d["name"] for d in self._devices.values())
+        raise SimError(f"That device isn't in our catalog yet. Available: {available}.")
+
+    def _trade_in(self, c: dict[str, Any]) -> dict[str, Any]:
+        rules = self.catalog["trade_in"]
+        lines = (c.get("mobile") or {}).get("lines") or []
+        current = lines[0] if lines else {}
+        device = current.get("device")
+        eligible = bool(device) and device in rules["eligible_devices"] and current.get("device_condition") == "good"
+        valued = c.get("tenure_months", 0) >= rules["valued_customer_min_tenure_months"]
+        usual = rules["usual_credit"] if eligible else 0.0
+        bonus = rules["valued_customer_bonus_credit"] if eligible and valued else 0.0
+        return {
+            "current_device": device,
+            "eligible": eligible,
+            "usual_credit": _money(usual),
+            "valued_customer_bonus_credit": _money(bonus),
+            "total_trade_in_credit": _money(usual + bonus),
+            "valued_customer_reason": f"Customer for {c.get('tenure_months', 0)} months" if valued else None,
+            "terms": rules["terms"],
+        }
+
+    def device_offer(self, customer_id: str, model: str) -> dict[str, Any]:
+        c = self._get(customer_id)
+        device = self._find_device(model)
+        trade = self._trade_in(c)
+        price = device["starting_price"]
+        months = device["installment_months"]
+        net = max(price - trade["total_trade_in_credit"], 0.0)
+        return {
+            "device": {
+                "name": device["name"],
+                "maker": device["maker"],
+                "starting_storage": device["starting_storage"],
+                "storage_options": device["storage_options"],
+                "highlights": device["highlights"],
+                "colors": device["colors"],
+                "availability": device["available"],
+                "facts_source": device["source"],
+            },
+            "pricing": {
+                "full_price": _money(price),
+                "installment_months": months,
+                "monthly_installment": _money(price / months),
+            },
+            "trade_in": trade,
+            "offer": {
+                "offer_id": f"OFR-DEV-{device['id'].upper()}",
+                "type": "device",
+                "name": f"{device['name']} {device['starting_storage']}",
+                "full_price": _money(price),
+                "trade_in_credit": trade["total_trade_in_credit"],
+                "price_after_trade_in": _money(net),
+                "monthly_installment_after_trade_in": _money(net / months),
+                "installment_months": months,
+                "recommended": True,
+            },
+        }
+
+    def service_alerts(self, customer_id: str) -> dict[str, Any]:
+        c = self._get(customer_id)
+        alert = c.get("weather_alert")
+        if not alert:
+            return {"alerts": [], "service_area": c.get("region")}
+        has_mobile = bool((c.get("mobile") or {}).get("lines"))
+        active_pass = any(b["type"] == "storm_data_pass" for b in c["benefits"])
+        return {
+            "service_area": c.get("region"),
+            "alerts": [alert],
+            "courtesy": {
+                "storm_data_pass_eligible": has_mobile and not active_pass,
+                "already_active": active_pass,
+                "hours": self.catalog["mobile"]["storm_data_pass_hours"],
+                "price": 0.0,
+                "description": "Unlimited mobile data on every line, free during the storm window",
+            },
+            "safety_tips": [
+                "Charge phones and battery packs now",
+                "Your phone can be a hotspot if home internet or power drops",
+                "Avoid downed lines; report them to your power company",
+            ],
+        }
+
+    def activate_storm_pass(self, customer_id: str) -> dict[str, Any]:
+        with self._lock:
+            c = self._get(customer_id)
+            if not c.get("weather_alert"):
+                raise SimError("No active weather alert for this area.")
+            lines = (c.get("mobile") or {}).get("lines") or []
+            if not lines:
+                raise SimError("The storm data pass is for accounts with Lumora mobile lines.")
+            if any(b["type"] == "storm_data_pass" for b in c["benefits"]):
+                raise SimError("The storm data pass is already active.")
+            hours = self.catalog["mobile"]["storm_data_pass_hours"]
+            benefit = {"type": "storm_data_pass", "id": f"SDP-{secrets.token_hex(3).upper()}", "hours": hours}
+            c["benefits"].append(benefit)
+        return {
+            "activated": True,
+            "pass_id": benefit["id"],
+            "hours": hours,
+            "lines_covered": len(lines),
+            "charge": 0.0,
+            "ends": f"Automatically in {hours} hours; nothing to cancel",
+        }
+
+    # ------------------------------------------------------------ orders
+    def _resolve_offer(self, customer_id: str, offer_id: str) -> dict[str, Any]:
+        if offer_id.startswith("OFR-DEV-"):
+            device_id = offer_id.removeprefix("OFR-DEV-").lower()
+            device = self._devices.get(device_id)
+            if device is None:
+                raise SimError("That offer is not available for this account.")
+            return self.device_offer(customer_id, device["name"])["offer"]
+        need = "wifi" if offer_id.startswith("OFR-EQP-") else "speed"
+        eligible = self.offers(customer_id, need)
+        if eligible["blocked"]:
+            raise SimError("Orders are paused while a service issue is open.")
+        offer = next((o for o in eligible["offers"] if o["offer_id"] == offer_id), None)
+        if offer is None:
+            raise SimError("That offer is not available for this account.")
+        return offer
+
+    def preview_order(self, customer_id: str, offer_id: str) -> dict[str, Any]:
+        c = self._get(customer_id)
+        offer = self._resolve_offer(customer_id, offer_id)
+        current = self._plans[c["plan_id"]]
+        items: list[dict[str, Any]] = []
+        benefits: list[str] = []
+        due_today = 0.0
+        if offer["type"] == "device":
+            months = offer["installment_months"]
+            items = [
+                {"label": offer["name"], "amount": offer["full_price"]},
+                {"label": "Trade-in credit", "amount": -offer["trade_in_credit"]},
+            ]
+            monthly_after = offer["monthly_installment_after_trade_in"]
+            summary = {
+                "device_total": offer["price_after_trade_in"],
+                "monthly_installment": monthly_after,
+                "installment_months": months,
+                "current_monthly_price": _money(current["monthly_price"]),
+                "new_monthly_price": _money(current["monthly_price"] + monthly_after),
+            }
+            effective = "Ships free in 1-2 business days; trade-in kit included"
+        elif offer["type"] == "equipment":
+            items = [{"label": f"{offer['name']} (monthly)", "amount": offer["monthly_price"]}]
+            summary = {
+                "current_monthly_price": _money(current["monthly_price"]),
+                "new_monthly_price": _money(current["monthly_price"] + offer["monthly_price"]),
+            }
+            effective = "Ships free in 2 business days"
+        else:
+            promo = offer.get("promo") or {}
+            items = [{"label": f"{offer['name']} internet (monthly)", "amount": offer["monthly_price"]}]
+            new_monthly = offer["monthly_price"]
+            if promo:
+                items.append(
+                    {"label": f"Upgrade promo, {promo['months']} months", "amount": -promo["monthly_discount"]}
+                )
+                new_monthly = promo["promo_monthly_price"]
+            bundle = offer.get("bundle")
+            if bundle:
+                items.append(
+                    {"label": f"{bundle['name']}", "amount": 0.0, "worth_monthly_price": bundle["worth_monthly_price"]}
+                )
+                benefits.append(bundle["name"])
+            summary = {
+                "current_monthly_price": _money(current["monthly_price"]),
+                "new_monthly_price": _money(new_monthly),
+                "monthly_change": _money(new_monthly - current["monthly_price"]),
+                "price_after_promo": offer["monthly_price"],
+            }
+            effective = "Takes effect within 15 minutes; no technician needed"
+        return {
+            "quote_id": f"QTE-{secrets.token_hex(3).upper()}",
+            "offer_id": offer_id,
+            "item": offer["name"],
+            "type": offer["type"],
+            "line_items": items,
+            "due_today": _money(due_today),
+            **summary,
+            "included_benefits": benefits,
+            "effective": effective,
+            "note": "Taxes and fees not included. Simulated quote.",
+        }
+
     def _blocking_fault(self, c: dict[str, Any]) -> str | None:
         verdict, _ = self._verdict(c)
         if verdict in ("area_outage", "gateway_fault", "signal_issue"):
@@ -243,6 +461,7 @@ class SimStore:
                             "promo_monthly_price": _money(plan["monthly_price"] - discount),
                             "promo_monthly_change": _money(max(delta - discount, 0)),
                         },
+                        "bundle": self._bundle_for(plan),
                         "recommended": plan["id"] == recommended_id,
                         "why": (
                             f"Peak usage is about {round(peak_mbps)} Mbps on a "
@@ -320,29 +539,55 @@ class SimStore:
         for order in c["orders"]:
             if order["offer_id"] == offer_id:
                 return {"submitted": True, "duplicate": True, **order}
-        need = "wifi" if offer_id.startswith("OFR-EQP-") else "speed"
-        eligible = self.offers(customer_id, need)
-        if eligible["blocked"]:
-            raise SimError("Orders are paused while a service issue is open.")
-        offer = next((o for o in eligible["offers"] if o["offer_id"] == offer_id), None)
-        if offer is None:
-            raise SimError("That offer is not available for this account.")
+        offer = self._resolve_offer(customer_id, offer_id)
+        quote = self.preview_order(customer_id, offer_id)
         with self._lock:
             order = {
                 "order_id": f"ORD-{secrets.token_hex(4).upper()}",
                 "offer_id": offer_id,
+                "type": offer["type"],
                 "item": offer["name"],
-                "monthly_change": offer["monthly_change"],
-                "new_monthly_price": None,
-                "effective": "Takes effect within 15 minutes"
-                if offer["type"] == "plan_upgrade"
-                else "Ships free in 2 business days",
+                "monthly_change": 0.0,
+                "new_monthly_price": quote.get("new_monthly_price"),
+                "included_benefits": list(quote["included_benefits"]),
+                "effective": quote["effective"],
             }
             if offer["type"] == "plan_upgrade":
+                order["monthly_change"] = _money(offer["monthly_change"])
                 c["plan_id"] = offer["plan_id"]
-                order["new_monthly_price"] = offer["monthly_price"]
                 c.setdefault("usage", {})["peak_utilization_pct"] = 55
-            else:
+                if offer.get("bundle"):
+                    order["mobile_line_added"] = self._apply_mobile_free_year(c)
+            elif offer["type"] == "equipment":
+                order["monthly_change"] = _money(offer["monthly_price"])
                 c.setdefault("wifi", {})["coverage"] = "pending_pod_install"
+            else:  # device
+                order["device_total"] = offer["price_after_trade_in"]
+                order["trade_in_credit"] = offer["trade_in_credit"]
+                order["full_price"] = offer["full_price"]
+                order["monthly_installment"] = offer["monthly_installment_after_trade_in"]
+                lines = (c.get("mobile") or {}).get("lines") or []
+                if lines:
+                    lines[0]["device"] = offer["name"]
             c["orders"].append(order)
         return {"submitted": True, "duplicate": False, **order}
+
+    def _apply_mobile_free_year(self, c: dict[str, Any]) -> bool:
+        """Add the free Unlimited line (new line if they have no mobile). Returns True if a line was added."""
+        promo = self.catalog["bundle_promos"]["mobile_free_year"]
+        mobile = c.setdefault("mobile", {}) or {}
+        c["mobile"] = mobile
+        lines = mobile.setdefault("lines", [])
+        added = not lines
+        if added:
+            lines.append(
+                {
+                    "line_id": f"LN-{secrets.token_hex(2).upper()}",
+                    "device": "SIM kit (bring your phone)",
+                    "device_condition": None,
+                }
+            )
+        mobile["plan"] = promo["line_name"]
+        mobile["free_months_remaining"] = promo["months"]
+        c["benefits"].append({"type": "mobile_free_year", "months": promo["months"]})
+        return added

@@ -17,7 +17,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-Intent = Literal["connectivity", "speed", "wifi", "general"]
+Intent = Literal["connectivity", "speed", "wifi", "device", "alert", "general"]
 
 
 class Expectations(BaseModel):

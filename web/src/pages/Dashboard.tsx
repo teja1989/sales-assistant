@@ -5,7 +5,7 @@ import { BrandMark } from "../components/BrandMark";
 import type { AppConfig, Metrics } from "../types";
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
-const usd = (v: number) => `$${v.toFixed(2)}`;
+const usd = (v: number) => `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const EVENT_TEXT: Record<string, string> = {
   session_started: "Chat started",
@@ -20,6 +20,8 @@ const EVENT_TEXT: Record<string, string> = {
   action_declined: "Customer declined",
   guardrail: "Guardrail stepped in",
   tool_error: "Tool error",
+  order_previewed: "Order previewed",
+  storm_pass_activated: "Storm data pass on",
 };
 
 export function Dashboard({ config }: { config: AppConfig | null }) {
@@ -107,6 +109,20 @@ export function Dashboard({ config }: { config: AppConfig | null }) {
                     <small>times an offer waited for a fix first</small>
                   </dd>
                 </div>
+              </dl>
+            </section>
+
+            <section className="ops" aria-label="Mobile and cross-sell">
+              <h2>Mobile and cross-sell</h2>
+              <dl>
+                <div><dt>Devices sold</dt><dd>{m.devices_sold}</dd></div>
+                <div><dt>Device sales</dt><dd>{usd(m.device_sales_usd)}</dd></div>
+                <div><dt>Trade-in credits given</dt><dd>{usd(m.trade_in_credits_usd)}</dd></div>
+                <div><dt>Free-year mobile bundles</dt><dd>{m.mobile_bundles}</dd></div>
+                <div><dt>New mobile lines</dt><dd>{m.new_mobile_lines}</dd></div>
+                <div><dt>Storm data passes</dt><dd>{m.storm_data_passes}</dd></div>
+                <div><dt>Orders previewed / placed</dt><dd>{m.orders_previewed} / {m.offers_accepted}</dd></div>
+                <div><dt>Offers presented</dt><dd>{m.offers_presented}</dd></div>
               </dl>
             </section>
 

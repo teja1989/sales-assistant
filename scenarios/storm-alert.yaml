@@ -1,0 +1,61 @@
+# Severe storm forecast. Proactive care: free 48-hour mobile data pass, one tap, then "stay safe".
+id: storm-alert
+title: "Storm coming: will I stay connected?"
+description: "Severe storm forecast for the area. The assistant activates a free 48-hour unlimited mobile data pass in one tap."
+intent: alert
+search_query: "storm warning tonight will my internet keep working"
+match_keywords: [storm, weather, hurricane, tornado, "power outage", wind, thunderstorm, forecast, "stay connected"]
+assistant_brief: >
+  A severe storm is forecast. Reassure the customer (home internet is working now), offer the
+  free storm data pass if eligible, then close with a short stay-safe note.
+tools:
+  - get_customer_profile
+  - check_service_alerts
+  - check_area_outage
+  - activate_storm_data_pass
+data_sources: {}
+suggested_replies:
+  - "Yes, turn it on"
+  - "What if the power goes out?"
+  - "Does it cost anything?"
+customer:
+  id: LUM-7007
+  first_name: Rosa
+  plan_id: plus-500
+  tenure_months: 63
+  region: Bayside Point
+  equipment:
+    gateway_model: LX-6 Wi-Fi 6 Gateway
+    firmware: "6.2.1"
+  outage: null
+  fault: null
+  weather_alert:
+    type: severe_storm
+    headline: "Severe Thunderstorm Warning"
+    window: "from 6 PM tonight through tomorrow evening"
+    expected_impact: "Damaging winds; power and network interruptions possible"
+    source: "Simulated weather feed"
+  mobile:
+    plan: Lumora Unlimited
+    lines:
+      - {line_id: LN-7A01, device: iPhone 15 Pro, device_condition: good}
+      - {line_id: LN-7A02, device: iPhone 14 Pro, device_condition: good}
+      - {line_id: LN-7A03, device: iPhone 16, device_condition: good}
+  line:
+    gateway_online: true
+    downstream_snr_db: 38.9
+    downstream_power_dbmv: 1.8
+    upstream_power_dbmv: 43.1
+    drops_24h: 0
+    uptime_hours: 760
+  wifi:
+    coverage: good
+    connected_devices: 21
+  usage:
+    peak_utilization_pct: 48
+    measured_speed_mbps: 491
+expected:
+  must_call: [check_service_alerts]
+  must_not_call: [submit_upgrade_order]
+  confirm_action: activate_storm_data_pass
+  outcome: storm_pass

@@ -17,8 +17,17 @@ READ_TOOLS = {
     "run_line_diagnostics",
     "get_usage_profile",
     "get_eligible_offers",
+    "get_device_offer",
+    "check_service_alerts",
+    "preview_order",
 }
-ACTION_TOOLS = {"reboot_gateway", "schedule_technician", "apply_service_credit", "submit_upgrade_order"}
+ACTION_TOOLS = {
+    "reboot_gateway",
+    "schedule_technician",
+    "apply_service_credit",
+    "submit_upgrade_order",
+    "activate_storm_data_pass",
+}
 
 
 @pytest.fixture

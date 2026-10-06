@@ -1,0 +1,62 @@
+# Gamer on Plus 500 who maxes out the line every evening (game downloads + live streaming).
+# Ideal outcome: verify health, cite gaming usage, recommend Turbo 800 (includes a free year of
+# mobile), preview the order, one-tap confirm.
+id: gamer-upgrade
+title: "Online games lag every evening"
+description: "Healthy line saturated by gaming, downloads and live streaming. Turbo 800 with a free year of mobile, previewed and ordered in one tap."
+intent: speed
+search_query: "fix lag online gaming home internet evenings"
+match_keywords: [gaming, games, game, gamer, ping, latency, ps5, xbox, playstation, twitch, "online gaming"]
+assistant_brief: >
+  The customer is a gamer who also live-streams. Confirm the line is healthy, then explain
+  that evening lag comes from maxing out the plan (downloads + streaming while playing).
+  Recommend the offer marked recommended and mention its bundle. Preview, then order.
+tools:
+  - get_customer_profile
+  - check_area_outage
+  - run_line_diagnostics
+  - get_usage_profile
+  - get_eligible_offers
+  - preview_order
+  - submit_upgrade_order
+data_sources: {}
+suggested_replies:
+  - "Yes, upgrade me"
+  - "Will this fix my ping?"
+  - "What happens after 12 months?"
+customer:
+  id: LUM-5005
+  first_name: Jordan
+  plan_id: plus-500
+  tenure_months: 19
+  region: Westbrook
+  equipment:
+    gateway_model: LX-7 Wi-Fi 6E Gateway
+    firmware: "7.0.4"
+  outage: null
+  fault: null
+  mobile: null
+  line:
+    gateway_online: true
+    downstream_snr_db: 39.8
+    downstream_power_dbmv: 0.6
+    upstream_power_dbmv: 42.2
+    drops_24h: 0
+    uptime_hours: 512
+  wifi:
+    coverage: good
+    connected_devices: 14
+    weakest_room: Garage
+    weakest_rssi_dbm: -63
+    interference: low
+  usage:
+    peak_utilization_pct: 92
+    hours_at_cap_30d: 38
+    peak_hours: "8 PM-1 AM"
+    measured_speed_mbps: 488
+    top_activities: [online gaming on PS5 and PC, 100+ GB game downloads, live streaming to Twitch]
+expected:
+  must_call: [run_line_diagnostics, get_usage_profile, get_eligible_offers, preview_order]
+  must_not_call: [reboot_gateway]
+  confirm_action: submit_upgrade_order
+  outcome: offer_accepted

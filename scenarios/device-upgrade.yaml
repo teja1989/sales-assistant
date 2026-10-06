@@ -1,0 +1,54 @@
+# Customer researching the iPhone 18 Pro. Verified device facts + personalized trade-in
+# ($800 usual + $200 valued-customer bonus), order preview, one-tap order.
+id: device-upgrade
+title: "Looking at the iPhone 18 Pro"
+description: "Device facts from Apple's announcement, a personalized trade-in offer ($800 usual + $200 valued-customer bonus), previewed and ordered."
+intent: device
+search_query: "apple iphone 18 pro price and specs"
+match_keywords: [iphone, "18 pro", apple, phone, "new phone", trade, "trade-in", device, smartphone]
+assistant_brief: >
+  The customer is researching a new phone. Share only the facts returned by get_device_offer,
+  then the personalized trade-in (usual credit + valued-customer bonus = total). Use the base
+  storage by default; don't ask about color or storage unless the customer raises it.
+tools:
+  - get_customer_profile
+  - get_device_offer
+  - preview_order
+  - submit_upgrade_order
+data_sources: {}
+suggested_replies:
+  - "Yes, preview the order"
+  - "How does the trade-in work?"
+  - "What colors does it come in?"
+customer:
+  id: LUM-8008
+  first_name: Kevin
+  plan_id: gig-1000
+  tenure_months: 44
+  region: Cedar Park
+  equipment:
+    gateway_model: LX-7 Wi-Fi 6E Gateway
+    firmware: "7.0.4"
+  outage: null
+  fault: null
+  mobile:
+    plan: Lumora Unlimited
+    lines:
+      - {line_id: LN-8A01, device: iPhone 15 Pro, device_condition: good}
+  line:
+    gateway_online: true
+    downstream_snr_db: 39.5
+    downstream_power_dbmv: 0.9
+    upstream_power_dbmv: 42.7
+    drops_24h: 0
+  wifi:
+    coverage: good
+    connected_devices: 12
+  usage:
+    peak_utilization_pct: 35
+    measured_speed_mbps: 940
+expected:
+  must_call: [get_device_offer, preview_order]
+  must_not_call: [run_line_diagnostics]
+  confirm_action: submit_upgrade_order
+  outcome: device_sold

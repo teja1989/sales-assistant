@@ -76,3 +76,71 @@ def test_clone_isolation(store: SimStore) -> None:
     store.reboot_gateway(clone)
     assert store.diagnostics("LUM-1001")["verdict"] == "gateway_fault"
     assert store.diagnostics(clone)["verdict"] == "healthy"
+
+
+# ------------------------------------------------------------ mobile + devices
+def test_800_and_faster_include_free_mobile_year(store: SimStore) -> None:
+    offers = {o["plan_id"]: o for o in store.offers("LUM-5005", "speed")["offers"]}
+    assert offers["turbo-800"]["recommended"] is True
+    assert offers["turbo-800"]["bundle"]["months"] == 12
+    assert all(o["bundle"] for o in offers.values())  # every tier above Plus 500 is 800+
+
+
+def test_plan_below_800_has_no_bundle(store: SimStore) -> None:
+    offers = {o["plan_id"]: o for o in store.offers("LUM-3003", "speed")["offers"]}
+    assert offers["plus-500"]["bundle"] is None and offers["turbo-800"]["bundle"]
+
+
+def test_bundle_order_adds_mobile_line_for_customer_without_mobile(store: SimStore) -> None:
+    quote = store.preview_order("LUM-5005", "OFR-UPG-TURBO-800")
+    assert quote["new_monthly_price"] == 70.0 and quote["due_today"] == 0.0
+    assert quote["included_benefits"]
+    order = store.submit_order("LUM-5005", "OFR-UPG-TURBO-800")
+    assert order["mobile_line_added"] is True
+    assert store.customer_profile("LUM-5005")["mobile"]["free_months_remaining"] == 12
+
+
+def test_device_offer_trade_in_and_valued_bonus(store: SimStore) -> None:
+    offer = store.device_offer("LUM-8008", "Apple 18 Pro")
+    trade = offer["trade_in"]
+    assert (trade["usual_credit"], trade["valued_customer_bonus_credit"], trade["total_trade_in_credit"]) == (
+        800.0,
+        200.0,
+        1000.0,
+    )
+    assert offer["offer"]["price_after_trade_in"] == 199.0
+    assert offer["device"]["facts_source"].startswith("Apple Newsroom")
+
+
+def test_no_valued_bonus_for_new_customers(store: SimStore) -> None:
+    cid = store.add_customer(
+        {
+            "id": "NEW-1",
+            "first_name": "N",
+            "plan_id": "plus-500",
+            "tenure_months": 3,
+            "mobile": {"lines": [{"device": "iPhone 15 Pro", "device_condition": "good"}]},
+        }
+    )
+    trade = store.device_offer(cid, "iphone 18 pro")["trade_in"]
+    assert trade["usual_credit"] == 800.0 and trade["valued_customer_bonus_credit"] == 0.0
+
+
+def test_unknown_device_is_a_clean_error(store: SimStore) -> None:
+    with pytest.raises(SimError, match="isn't in our catalog"):
+        store.device_offer("LUM-8008", "Galaxy Z Fold 12")
+
+
+def test_device_order(store: SimStore) -> None:
+    order = store.submit_order("LUM-8008", "OFR-DEV-IPHONE-18-PRO")
+    assert order["type"] == "device" and order["trade_in_credit"] == 1000.0 and order["full_price"] == 1199.0
+
+
+def test_storm_pass_once_and_only_with_alert(store: SimStore) -> None:
+    alerts = store.service_alerts("LUM-7007")
+    assert alerts["alerts"] and alerts["courtesy"]["storm_data_pass_eligible"]
+    assert store.activate_storm_pass("LUM-7007")["lines_covered"] == 3
+    with pytest.raises(SimError):
+        store.activate_storm_pass("LUM-7007")
+    with pytest.raises(SimError):
+        store.activate_storm_pass("LUM-3003")  # no alert, no mobile

@@ -119,3 +119,31 @@ def test_price_helpers() -> None:
     assert verified == {"85.00", "5.00"}
     text, bad = check_prices("Costs $85 or $38 or $5.00", verified)
     assert bad == ["$38"] and "$85" in text and "$5.00" in text
+
+
+def test_order_requires_preview_when_preview_tool_available() -> None:
+    c, llm = scripted_client(
+        [
+            ("", [("get_eligible_offers", {"need": "speed"})]),
+            ("Ordering now.", [("submit_upgrade_order", {"offer_id": "OFR-UPG-PLUS-500"})]),
+            ("Ok.", []),
+        ]
+    )
+    with c:
+        sid = start_session(c, "speed-upgrade")
+        events = turn(c, sid, {"message": "just order it"})
+    assert not [e for e in events if e["type"] == "confirm_required"]
+    assert any("preview_required" in m["content"] for m in llm.calls[-1] if m["role"] == "tool")
+
+
+def test_device_trade_in_amounts_pass_price_guard() -> None:
+    c, _ = scripted_client(
+        [
+            ("", [("get_device_offer", {"model": "iPhone 18 Pro"})]),
+            ("It's $1,199.00, minus $800.00 plus a $200.00 bonus: $199.00 total.", []),
+        ]
+    )
+    with c:
+        sid = start_session(c, "device-upgrade")
+        events = turn(c, sid, {"message": "price?"})
+    assert not any(e["type"] == "guardrail" for e in events)

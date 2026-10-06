@@ -25,7 +25,7 @@ NO = re.compile(r"\b(no|nope|not now|later|nah|cancel|don'?t)\b", re.I)
 
 
 def _money(value: Any) -> str:
-    return f"${float(value):.2f}"
+    return f"${float(value):,.2f}"
 
 
 class MockLlm:
@@ -77,7 +77,18 @@ class MockLlm:
             r = results.get(tool)
             return r.get("status") if isinstance(r, dict) else None
 
+        query_match = re.search(r'searched for: "([^"]*)"', system)
+        query = query_match.group(1) if query_match else ""
+
         # 1. First look: gather facts in parallel.
+        if "get_customer_profile" not in results and intent == "device":
+            calls = [("get_customer_profile", {})]
+            if can("get_device_offer"):
+                calls.append(("get_device_offer", {"model": query or last_user}))
+            return "Great question. Let me pull up the details and what you'd personally get for it.", calls
+        if "get_customer_profile" not in results and intent == "alert":
+            calls = [(t, {}) for t in ("get_customer_profile", "check_service_alerts", "check_area_outage") if can(t)]
+            return "Let me check the alerts for your area and your account.", calls
         if "get_customer_profile" not in results:
             calls = [(t, {}) for t in ("get_customer_profile", "check_area_outage", "run_line_diagnostics") if can(t)]
             if intent == "speed" and can("get_usage_profile"):
@@ -89,6 +100,9 @@ class MockLlm:
             tool = names.get(last["tool_call_id"], "")
             data = results.get(tool, {})
             if data.get("status") == "awaiting_customer_confirmation":
+                prior = next((m.get("content") or "" for m in reversed(messages) if m["role"] == "assistant"), "")
+                if "Confirm" in prior:
+                    return "", []  # already told them to tap Confirm; don't repeat
                 return "Tap **Confirm** on the card and I'll take care of it, or **Not now** to skip.", []
             if data.get("status") == "declined_by_customer":
                 return "No problem, I won't do that. Is there anything else I can help with?", []
@@ -104,7 +118,13 @@ class MockLlm:
         diag = results.get("run_line_diagnostics", {})
         verdict = diag.get("verdict", "healthy")
         offers = results.get("get_eligible_offers")
+        device = results.get("get_device_offer")
         ordered = "submit_upgrade_order" in results and results["submit_upgrade_order"].get("submitted")
+        pick = None
+        if device and isinstance(device.get("offer"), dict):
+            pick = device["offer"]
+        elif offers and offers.get("offers"):
+            pick = next((o for o in offers["offers"] if o.get("recommended")), None)
 
         # 3. Follow-up user turns.
         if (
@@ -118,14 +138,43 @@ class MockLlm:
             isinstance(r, dict) and r.get("status") == "awaiting_customer_confirmation" for r in results.values()
         ):
             return "Whenever you're ready, tap **Confirm** on the card (or **Not now** to skip).", []
-        if last["role"] == "user" and offers and offers.get("offers") and not ordered:
-            pick = next((o for o in offers["offers"] if o.get("recommended")), None)
-            if pick and YES.search(last_user) and can("submit_upgrade_order"):
-                return f"Great choice. I'll set up **{pick['name']}** for you.", [
-                    ("submit_upgrade_order", {"offer_id": pick["offer_id"]})
-                ]
+        if last["role"] == "user" and pick and not ordered:
+            if YES.search(last_user):
+                if can("preview_order"):
+                    return f"Great choice. Here's your order preview for **{pick['name']}**.", [
+                        ("preview_order", {"offer_id": pick["offer_id"]})
+                    ]
+                if can("submit_upgrade_order"):
+                    return f"Great choice. I'll set up **{pick['name']}** for you.", [
+                        ("submit_upgrade_order", {"offer_id": pick["offer_id"]})
+                    ]
             if NO.search(last_user):
-                return "Totally fine. Your current plan stays as is. Anything else I can help with?", []
+                return "Totally fine. Nothing changes on your account. Anything else I can help with?", []
+
+        # Device and alert flows don't need line diagnostics.
+        if intent == "device" and device and not ordered:
+            return self._present_device(name, device), []
+        if intent == "alert":
+            alerts = results.get("check_service_alerts", {})
+            courtesy = alerts.get("courtesy") or {}
+            if (
+                alerts.get("alerts")
+                and courtesy.get("storm_data_pass_eligible")
+                and "activate_storm_data_pass" not in results
+                and can("activate_storm_data_pass")
+            ):
+                alert = alerts["alerts"][0]
+                return (
+                    f"Hi {name}, there's a **{alert.get('headline', 'storm warning')}** for {alerts.get('service_area', 'your area')} "
+                    f"{alert.get('window', 'over the next 48 hours')}. Your home internet is working normally right now, "
+                    "but storms can knock out power.\n\n"
+                    f"So you stay connected no matter what, I can turn on **free unlimited mobile data for the next {courtesy.get('hours', 48)} hours** "
+                    "on all your lines, at no charge."
+                ), [("activate_storm_data_pass", {})]
+            if not alerts.get("alerts"):
+                return f"Good news, {name}: there are no weather or network alerts for your area right now.", []
+        if intent in ("alert", "device"):
+            return "Is there anything else I can help you with today?", []
 
         # 4. Decide based on diagnostics.
         if verdict == "area_outage":
@@ -199,14 +248,67 @@ class MockLlm:
             fee = data.get("visit_fee", 0)
             fee_text = "There's no charge for this visit." if not fee else f"The visit fee is {_money(fee)}."
             return (f"You're booked: **{data['appointment_window']}** (ticket {data['ticket_id']}). {fee_text}"), []
+        if tool == "preview_order" and data.get("quote_id"):
+            parts = []
+            if data.get("type") == "device":
+                parts.append(
+                    f"**{data['item']}**: {_money(data['device_total'])} after your trade-in, or "
+                    f"**{_money(data['monthly_installment'])}/month** for {data['installment_months']} months."
+                )
+            else:
+                parts.append(
+                    f"New monthly price: **{_money(data['new_monthly_price'])}** (today {_money(data['current_monthly_price'])})."
+                )
+            parts.append(f"Due today: **{_money(data['due_today'])}**.")
+            if data.get("included_benefits"):
+                parts.append("Included: " + "; ".join(data["included_benefits"]) + ".")
+            return " ".join(parts) + " Tap **Confirm** to place the order.", [
+                ("submit_upgrade_order", {"offer_id": data["offer_id"]})
+            ]
+        if tool == "activate_storm_data_pass" and data.get("activated"):
+            return (
+                f"Done. Free unlimited mobile data is on for **{data['hours']} hours** across your "
+                f"{data['lines_covered']} line{'s' if data['lines_covered'] != 1 else ''}. It ends automatically, nothing to cancel.\n\n"
+                "Stay safe. Charge your phones now, and if the power goes out, your phone can be a hotspot for your laptop."
+            ), []
         if tool == "submit_upgrade_order" and data.get("submitted"):
             price = data.get("new_monthly_price")
             price_text = f" Your new monthly price is **{_money(price)}**." if price else ""
+            extra = ""
+            if data.get("included_benefits"):
+                extra = " " + " ".join(f"Your **{b}** is active." for b in data["included_benefits"])
+                if data.get("mobile_line_added"):
+                    extra += " A SIM kit is on its way."
+            if data.get("type") == "device":
+                extra = " Your trade-in kit ships with the phone."
             return (
                 f"All set! Order **{data['order_id']}** for {data['item']} is confirmed. "
-                f"{data.get('effective', '')}.{price_text} Anything else I can help with?"
+                f"{data.get('effective', '')}.{price_text}{extra} Anything else I can help with?"
             ), []
         return None
+
+    def _present_device(self, name: str, data: dict[str, Any]) -> str:
+        device = data["device"]
+        pricing = data["pricing"]
+        trade = data["trade_in"]
+        offer = data["offer"]
+        highlights = "\n".join(f"- {h}" for h in device["highlights"][:4])
+        text = (
+            f"Hi {name}! Here's the **{device['name']}**. {device['availability']}.\n\n{highlights}\n\n"
+            f"Storage from {device['starting_storage']} to {device['storage_options'][-1]}, in {', '.join(device['colors'])}. "
+            f"It starts at **{_money(pricing['full_price'])}**.\n\n"
+        )
+        if trade.get("eligible"):
+            text += (
+                f"Upgrade now for a personalized offer: trading in your **{trade['current_device']}** is usually worth "
+                f"**{_money(trade['usual_credit'])}**, and as a valued customer you get an extra "
+                f"**{_money(trade['valued_customer_bonus_credit'])}**. That's **{_money(trade['total_trade_in_credit'])}** off, "
+                f"so it's **{_money(offer['price_after_trade_in'])}** or **{_money(offer['monthly_installment_after_trade_in'])}/month**.\n\n"
+                "Want me to preview the order?"
+            )
+        else:
+            text += f"That's **{_money(pricing['monthly_installment'])}/month** over {pricing['installment_months']} months. Want me to preview the order?"
+        return text
 
     def _present_offers(self, name: str, plan: dict[str, Any], diag: dict[str, Any], results: dict[str, Any]) -> str:
         offers = results["get_eligible_offers"]
@@ -240,11 +342,24 @@ class MockLlm:
             if promo
             else ""
         )
+        bundle_text = ""
+        if pick.get("bundle"):
+            bundle_text = f"\n\nBonus: it includes **{pick['bundle']['name']}** (worth {_money(pick['bundle']['worth_monthly_price'])}/month)."
+        else:
+            alt = next((o for o in offers["offers"] if o.get("bundle")), None)
+            if alt:
+                diff = alt["monthly_price"] - pick["monthly_price"]
+                bundle_text = (
+                    f"\n\nWorth knowing: **{alt['name']}** is {_money(diff)}/month more than that and includes "
+                    f"**{alt['bundle']['name']}**."
+                )
+        activities = ", ".join(usage.get("top_activities", [])[:3])
+        activity_text = f" (mostly {activities})" if activities else ""
         return (
-            f"Hi {name}, your connection is healthy, so this isn't a fault. You're simply outgrowing your plan. "
+            f"Hi {name}, your connection is healthy, so this isn't a fault. You're simply outgrowing your plan{activity_text}. "
             f"At peak times your household uses about **{usage.get('peak_utilization_pct', '?')}%** of your "
             f"{plan.get('download_mbps')} Mbps, and you hit the limit about "
             f"**{usage.get('hours_at_plan_limit_30d', '?')} hours** in the last 30 days.\n\n"
             f"I'd recommend **{pick['name']}** ({pick.get('download_mbps')} Mbps): "
-            f"{_money(pick['monthly_change'])}/month more than today.{promo_text}\n\nWant me to upgrade you?"
+            f"{_money(pick['monthly_change'])}/month more than today.{promo_text}{bundle_text}\n\nWant me to upgrade you?"
         )

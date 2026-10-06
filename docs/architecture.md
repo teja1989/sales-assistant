@@ -41,7 +41,8 @@ flowchart LR
      - **Action tools** become a pending action and a confirm card. Nothing executes yet.
    - Feed results back to the model; repeat until it answers without tool calls.
    - Check every dollar amount in the reply against tool results.
-5. **Confirmation.** Tapping Confirm sends `{"confirmation": {"action_id", "approved"}}`. Only then does the server execute the action, then the model narrates the result.
+5. **Order preview.** For purchases, the model calls `preview_order` (a read tool) and summarizes the quote; `submit_upgrade_order` is refused until that offer was previewed.
+6. **Confirmation.** Tapping Confirm sends `{"confirmation": {"action_id", "approved"}}`. Only then does the server execute the action, then the model narrates the result.
 
 ## Server-sent events
 
@@ -84,6 +85,6 @@ The MCP endpoint runs **stateless with JSON responses**, so any app instance can
 |---|---|
 | LLM provider or model | `.env` only (`LLM_PROVIDER`, Azure vars) |
 | Scenario behaviour | `scenarios/*.yaml` |
-| Prices, plans, promo | `data/catalog.yaml` |
+| Prices, plans, promo, mobile bundle, devices, trade-in | `data/catalog.yaml` |
 | A tool's contract | `app/mcp_server.py` (+ `app/sim.py` for simulated behaviour) |
 | Business rules (e.g. upsell threshold) | `app/sim.py` (in production, these live in the real APIs) |

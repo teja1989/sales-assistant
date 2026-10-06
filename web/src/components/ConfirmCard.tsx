@@ -2,30 +2,45 @@ import type { ChatItem, Json } from "../types";
 
 type ConfirmItem = Extract<ChatItem, { kind: "confirm" }>;
 
-const money = (v: unknown) => (typeof v === "number" ? `$${v.toFixed(2)}` : null);
+const money = (v: unknown) =>
+  typeof v === "number"
+    ? `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : null;
 
 function Details({ details }: { details: Json }) {
   const promo = (details.promo ?? null) as Json | null;
   const rows: [string, string][] = [];
-  const price = money(details.monthly_price);
-  if (price) rows.push(["Monthly price", price]);
-  const change = money(details.monthly_change);
-  if (change && details.type !== "equipment") rows.push(["Change vs today", `+${change}/mo`]);
-  if (promo && money(promo.promo_monthly_price))
-    rows.push([`First ${String(promo.months)} months`, `${money(promo.promo_monthly_price)}/mo`]);
+  if (details.type === "device") {
+    if (money(details.full_price)) rows.push(["Device price", money(details.full_price)!]);
+    if (money(details.trade_in_credit)) rows.push(["Trade-in credit", `-${money(details.trade_in_credit)}`]);
+    if (money(details.monthly_installment))
+      rows.push(["Monthly installment", `${money(details.monthly_installment)} × ${String(details.installment_months)}`]);
+  } else {
+    if (money(details.current_monthly_price)) rows.push(["Monthly today", money(details.current_monthly_price)!]);
+    const hasPromo = promo && money(promo.promo_monthly_price) && details.type === "plan_upgrade";
+    if (money(details.new_monthly_price))
+      rows.push([hasPromo ? `New monthly, first ${String(promo!.months)} months` : "New monthly", money(details.new_monthly_price)!]);
+    else if (money(details.monthly_price)) rows.push(["Monthly price", money(details.monthly_price)!]);
+    if (hasPromo && money(details.monthly_price)) rows.push(["After the promo", money(details.monthly_price)!]);
+  }
+  if (money(details.due_today)) rows.push(["Due today", money(details.due_today)!]);
   const amount = money(details.amount);
-  if (amount) rows.push(["Credit", amount]);
+  if (amount) rows.push(details.amount === 0 ? ["Cost to you", "Free"] : ["Credit", amount]);
   if (typeof details.issue === "string" && details.issue) rows.push(["Issue", details.issue]);
-  if (!rows.length) return null;
+  const benefits = (Array.isArray(details.included_benefits) ? details.included_benefits : []) as string[];
+  if (!rows.length && !benefits.length) return null;
   return (
-    <dl className="confirm-details">
-      {rows.map(([k, v]) => (
-        <div key={k}>
-          <dt>{k}</dt>
-          <dd>{v}</dd>
-        </div>
-      ))}
-    </dl>
+    <>
+      <dl className="confirm-details">
+        {rows.map(([k, v]) => (
+          <div key={k}>
+            <dt>{k}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {benefits.length > 0 && <p className="offer-bundle">Included: {benefits.join("; ")}</p>}
+    </>
   );
 }
 

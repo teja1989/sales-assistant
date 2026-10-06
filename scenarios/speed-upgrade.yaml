@@ -16,6 +16,7 @@ tools:
   - run_line_diagnostics
   - get_usage_profile
   - get_eligible_offers
+  - preview_order
   - submit_upgrade_order
 data_sources: {}
 suggested_replies:
@@ -53,7 +54,7 @@ customer:
     measured_speed_mbps: 296
     top_activities: [three 4K streams, cloud photo backup, online gaming, video calls]
 expected:
-  must_call: [run_line_diagnostics, get_usage_profile, get_eligible_offers]
+  must_call: [run_line_diagnostics, get_usage_profile, get_eligible_offers, preview_order]
   must_not_call: [reboot_gateway]
   confirm_action: submit_upgrade_order
   outcome: offer_accepted

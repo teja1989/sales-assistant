@@ -36,6 +36,7 @@ class Session:
     messages: list[dict[str, Any]] = field(default_factory=list)
     pending: dict[str, PendingAction] = field(default_factory=dict)
     offers_seen: dict[str, dict[str, Any]] = field(default_factory=dict)
+    previews: dict[str, dict[str, Any]] = field(default_factory=dict)
     verified_amounts: set[str] = field(default_factory=set)
     flags: set[str] = field(default_factory=set)
     created_at: float = field(default_factory=time.time)

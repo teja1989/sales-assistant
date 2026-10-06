@@ -93,6 +93,13 @@ export interface Metrics {
   offers_accepted: number;
   offer_conversion_rate: number;
   upsell_blocked_fault_first: number;
+  orders_previewed: number;
+  devices_sold: number;
+  device_sales_usd: number;
+  trade_in_credits_usd: number;
+  mobile_bundles: number;
+  new_mobile_lines: number;
+  storm_data_passes: number;
   incremental_monthly_revenue_usd: number;
   actions_confirmed: number;
   actions_declined: number;

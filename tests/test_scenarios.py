@@ -18,7 +18,11 @@ OUTCOME_METRIC = {
     "credit_applied": "credits_applied",
     "offer_accepted": "offers_accepted",
     "technician_booked": "technician_visits_booked",
+    "device_sold": "devices_sold",
+    "storm_pass": "storm_data_passes",
 }
+
+OFFER_TOOLS = ("get_eligible_offers", "get_device_offer")
 
 
 def play(client, scenario_id: str) -> tuple[list[dict], list[str]]:
@@ -30,7 +34,7 @@ def play(client, scenario_id: str) -> tuple[list[dict], list[str]]:
         pending = [e for e in events if e["type"] == "confirm_required"]
         if pending:
             events = turn(client, sid, {"confirmation": {"action_id": pending[-1]["action_id"], "approved": True}})
-        elif any(e["type"] == "tool_result" and e["tool"] == "get_eligible_offers" for e in history) and not any(
+        elif any(e["type"] == "tool_result" and e["tool"] in OFFER_TOOLS for e in history) and not any(
             e["type"] == "tool_result" and e["tool"] == "submit_upgrade_order" for e in history
         ):
             events = turn(client, sid, {"message": "Yes please, go ahead"})

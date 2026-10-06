@@ -9,6 +9,8 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 | Model reads or changes another customer's account (confused deputy) | `customer_id` removed from tool schemas; always injected from the session | `mcp_gateway.ToolSpec.llm_schema`, `orchestrator._execute` |
 | Model takes an action the customer didn't want | Non-read-only tools become pending actions; they run only on a separate Confirm API call the model can't make; ids are single-use | `orchestrator._handle_calls`, `_handle_confirmation` |
 | Model invents an offer or discount ("free gig") | Orders accepted only for `offer_id`s returned by `get_eligible_offers` in this session; the backend re-validates eligibility | `orchestrator`, `sim.submit_order` |
+| Order placed without the customer seeing the price | When a scenario has `preview_order`, `submit_upgrade_order` is refused until that exact offer was previewed in the session; the confirm card shows the quoted totals | `orchestrator._handle_calls` |
+| Model invents device specs or trade-in values | Device facts and trade-in amounts come only from `get_device_offer` (catalog sourced from Apple's announcement; trade-in rules server-side); amounts are price-checked | `sim.device_offer`, `guardrails` |
 | Model quotes a made-up price | Dollar amounts must match money fields in tool results, otherwise they're replaced | `guardrails.check_prices` |
 | Upsell while service is broken | Offers return `blocked: true` server-side while a fault is open | `sim.offers` |
 | Model calls tools it shouldn't | Per-scenario allowlist; unknown arguments dropped; malformed JSON rejected | `orchestrator` |

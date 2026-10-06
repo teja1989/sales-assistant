@@ -135,7 +135,10 @@ export function Chat({ config }: { config: AppConfig | null }) {
     void send(session.session_id, { confirmation: { action_id: actionId, approved } });
   };
 
-  const actionDone = items.some((i) => i.kind === "confirm" && i.state !== "pending");
+  // Hide quick replies once an action is decided, or while an order waits for confirmation.
+  const actionDone = items.some(
+    (i) => i.kind === "confirm" && (i.state !== "pending" || i.tool === "submit_upgrade_order"),
+  );
   const tools = items.filter((i): i is Extract<ChatItem, { kind: "tool" }> => i.kind === "tool");
   const assistant = config?.assistant_name ?? "Lumi";
 
@@ -278,7 +281,9 @@ export function Chat({ config }: { config: AppConfig | null }) {
                 ))}
               </ul>
               <p className="trace-foot">
-                Scenario: {session.scenario.title}. <Link to="/dashboard">Open impact dashboard</Link>
+                Scenario: {session.scenario.title}
+                <br />
+                <Link to="/dashboard">Open impact dashboard</Link>
               </p>
             </>
           )}

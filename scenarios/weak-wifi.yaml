@@ -15,6 +15,7 @@ tools:
   - run_line_diagnostics
   - get_usage_profile
   - get_eligible_offers
+  - preview_order
   - submit_upgrade_order
 data_sources: {}
 suggested_replies:
@@ -51,7 +52,7 @@ customer:
     measured_speed_mbps: 941
     top_activities: [HD streaming, remote work]
 expected:
-  must_call: [run_line_diagnostics, get_eligible_offers]
+  must_call: [run_line_diagnostics, get_eligible_offers, preview_order]
   must_not_call: [reboot_gateway]
   confirm_action: submit_upgrade_order
   outcome: offer_accepted

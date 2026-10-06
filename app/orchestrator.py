@@ -78,24 +78,48 @@ class Orchestrator:
             amount = self.catalog.get("credits", {}).get("outage_credit")
             details = {"amount": amount} if amount is not None else {}
             return "Add an outage service credit to your next bill.", details
+        if tool == "activate_storm_data_pass":
+            return "Turn on free unlimited mobile data on all your lines for 48 hours. No charge.", {"amount": 0.0}
         if tool == "submit_upgrade_order":
-            offer = session.offers_seen.get(args.get("offer_id", ""), {})
+            offer_id = args.get("offer_id", "")
+            offer = session.offers_seen.get(offer_id, {})
+            quote = session.previews.get(offer_id, {})
             details = {
-                k: offer.get(k)
-                for k in ("name", "download_mbps", "monthly_price", "monthly_change", "promo", "terms", "type")
-                if offer.get(k) is not None
+                k: v
+                for k, v in {
+                    "type": offer.get("type"),
+                    "name": offer.get("name"),
+                    "monthly_price": offer.get("monthly_price"),
+                    "promo": offer.get("promo"),
+                    "current_monthly_price": quote.get("current_monthly_price"),
+                    "new_monthly_price": quote.get("new_monthly_price"),
+                    "due_today": quote.get("due_today"),
+                    "full_price": offer.get("full_price"),
+                    "trade_in_credit": offer.get("trade_in_credit"),
+                    "monthly_installment": quote.get("monthly_installment"),
+                    "installment_months": quote.get("installment_months"),
+                    "included_benefits": quote.get("included_benefits") or None,
+                    "quote_id": quote.get("quote_id"),
+                }.items()
+                if v is not None
             }
-            verb = "Add" if offer.get("type") == "equipment" else "Upgrade to"
+            kind = offer.get("type")
+            verb = "Add" if kind == "equipment" else "Order" if kind == "device" else "Upgrade to"
             return f"{verb} {offer.get('name', 'the selected offer')}.", details
         return "Run this action on your account.", {}
 
     def _record(self, session: Session, outcome: ToolOutcome) -> None:
         if not outcome.is_error:
             collect_amounts(outcome.data, session.verified_amounts)
-            if outcome.tool == "get_eligible_offers" and not outcome.data.get("blocked"):
-                for offer in outcome.data.get("offers", []):
+            if not outcome.data.get("blocked"):
+                candidates = list(outcome.data.get("offers") or [])
+                if isinstance(outcome.data.get("offer"), dict):
+                    candidates.append(outcome.data["offer"])
+                for offer in candidates:
                     if isinstance(offer, dict) and offer.get("offer_id"):
                         session.offers_seen[str(offer["offer_id"])] = offer
+            if outcome.tool == "preview_order" and outcome.data.get("quote_id"):
+                session.previews[str(outcome.data.get("offer_id"))] = outcome.data
         source = outcome.source + (" (fallback)" if outcome.fallback else "")
         self.metrics.tool_result(session.id, outcome.tool, source, outcome.data, outcome.latency_ms, outcome.is_error)
 
@@ -272,8 +296,18 @@ class Orchestrator:
                 results[call.id] = json.dumps(
                     {
                         "error": "offer_not_presented",
-                        "detail": "Call get_eligible_offers and use an offer_id it returned.",
+                        "detail": "Use an offer_id returned by get_eligible_offers or get_device_offer.",
                     }
+                )
+                continue
+            if (
+                spec.name == "submit_upgrade_order"
+                and "preview_order" in specs
+                and args.get("offer_id") not in session.previews
+            ):
+                self.metrics.guardrail(session.id, "preview_required")
+                results[call.id] = json.dumps(
+                    {"error": "preview_required", "detail": "Call preview_order for this offer_id first."}
                 )
                 continue
             for existing_id, existing in list(session.pending.items()):

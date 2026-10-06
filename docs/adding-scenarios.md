@@ -18,7 +18,7 @@ A scenario is one YAML file in `scenarios/`. No code changes. It is loaded at st
 |---|---|
 | `id` | Unique slug |
 | `title`, `description` | Shown in the UI |
-| `intent` | `connectivity`, `speed`, `wifi` or `general`; goes into the system prompt |
+| `intent` | `connectivity`, `speed`, `wifi`, `device`, `alert` or `general`; goes into the system prompt and steers the first tools called |
 | `search_query` | Example search; shown as a chip on the search page |
 | `match_keywords` | Words/phrases that route a typed search to this scenario (phrases score higher) |
 | `assistant_brief` | Extra guidance appended to the system prompt |
@@ -44,11 +44,27 @@ A scenario is one YAML file in `scenarios/`. No code changes. It is loaded at st
 
 Offers are blocked while the verdict is `area_outage`, `gateway_fault` or `signal_issue`. A plan is marked `recommended` only when peak utilization is 70% or more, sized to about 1.4x peak usage.
 
-`plan_id` must exist in `data/catalog.yaml`.
+`plan_id` must exist in `data/catalog.yaml`. Plans of 800 Mbps or faster carry the free-mobile-year bundle (`bundle_promos` in the catalog).
+
+Optional fixture blocks for mobile flows:
+
+```yaml
+mobile:                       # null = no mobile service (an 800+ upgrade adds a free line)
+  plan: Lumora Unlimited
+  lines:
+    - {line_id: LN-1, device: iPhone 15 Pro, device_condition: good}   # first line is the trade-in device
+weather_alert:                # makes check_service_alerts return a storm and enables the storm data pass
+  type: severe_storm
+  headline: "Severe Thunderstorm Warning"
+  window: "from 6 PM tonight through tomorrow evening"
+  expected_impact: "Damaging winds; power and network interruptions possible"
+```
+
+Trade-in: the usual credit applies when the device is in `trade_in.eligible_devices` and in good condition; the valued-customer bonus applies at `valued_customer_min_tenure_months` or more. Devices live under `devices` in the catalog; add one with its `match` phrases and only facts you have verified.
 
 ## `expected.outcome` values
 
-`truck_roll_avoided`, `credit_applied`, `offer_accepted`, `technician_booked`. The test checks the matching dashboard metric moved.
+`truck_roll_avoided`, `credit_applied`, `offer_accepted`, `technician_booked`, `device_sold`, `storm_pass`. The test checks the matching dashboard metric moved.
 
 ## Example: signal problem that needs a technician
 
@@ -62,7 +78,7 @@ match_keywords: [rain, weather, "cuts out"]
 assistant_brief: Signal problems need a technician; don't suggest upgrades.
 tools: [get_customer_profile, check_area_outage, run_line_diagnostics, schedule_technician]
 customer:
-  id: LUM-5005
+  id: LUM-9009
   first_name: Alex
   plan_id: plus-500
   outage: null

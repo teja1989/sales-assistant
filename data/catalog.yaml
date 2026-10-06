@@ -1,6 +1,6 @@
-# Simulated product catalog for the fictional ISP "Lumora".
-# Prices are demo values only. The assistant may only quote prices returned by
-# tools, and tools read them from this file.
+# Simulated product catalog for the fictional provider "Lumora".
+# Prices, promos, trade-in values and financing are demo values only.
+# The assistant may only quote prices returned by tools, and tools read them from this file.
 
 plans:
   - id: essential-300
@@ -13,6 +13,11 @@ plans:
     download_mbps: 500
     upload_mbps: 20
     monthly_price: 70.00
+  - id: turbo-800
+    name: Turbo 800
+    download_mbps: 800
+    upload_mbps: 35
+    monthly_price: 80.00
   - id: gig-1000
     name: Gigabit
     download_mbps: 1000
@@ -29,11 +34,51 @@ upgrade_promo:
   monthly_discount: 10.00
   terms: "Promo applies for 12 months on plan upgrades. No contract; cancel or change anytime."
 
+# Internet + mobile bundle: upgrade to 800 Mbps or faster, get one Unlimited line free for a year.
+bundle_promos:
+  mobile_free_year:
+    min_download_mbps: 800
+    months: 12
+    line_name: Lumora Unlimited line
+    worth_monthly_price: 30.00
+    description: "1 Lumora Unlimited mobile line free for 12 months"
+
+mobile:
+  unlimited_line_price: 30.00
+  storm_data_pass_hours: 48
+
 equipment:
   - id: mesh-pod
     name: Lumora Mesh Pod
     description: "Extends whole-home Wi-Fi to weak rooms. Ships free, self-install in about 10 minutes."
     monthly_price: 7.00
+
+# Device facts below come from Apple's iPhone 18 Pro announcement (Apple Newsroom, September 2026).
+# Financing and trade-in values are simulated.
+devices:
+  - id: iphone-18-pro
+    name: iPhone 18 Pro
+    maker: Apple
+    match: ["iphone 18 pro", "iphone18 pro", "apple 18 pro", "18 pro"]
+    starting_price: 1199.00
+    starting_storage: 256GB
+    storage_options: [256GB, 512GB, 1TB, 2TB]
+    highlights:
+      - "A20 Pro chip"
+      - "48MP Fusion Main camera with variable aperture"
+      - "Up to 36 hours of video playback (eSIM-only models)"
+      - "Up to 50% charge in about 15 minutes with wired charging"
+    colors: [Black, Silver, Glacier, Burgundy]
+    available: "Available since September 18, 2026"
+    source: "Apple Newsroom, September 2026"
+    installment_months: 24
+
+trade_in:
+  usual_credit: 800.00
+  valued_customer_bonus_credit: 200.00
+  valued_customer_min_tenure_months: 12
+  eligible_devices: [iPhone 14 Pro, iPhone 15, iPhone 15 Pro, iPhone 16, iPhone 16 Pro, iPhone 17, iPhone 17 Pro]
+  terms: "Trade-in credit applied at checkout. Device must power on, with no cracked screen."
 
 credits:
   outage_credit: 10.00

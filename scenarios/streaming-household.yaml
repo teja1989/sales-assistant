@@ -1,0 +1,66 @@
+# Big streaming household on Gigabit that still buffers at peak.
+# Ideal outcome: verify health, show peak usage, recommend Ultra 2 Gig (bundle applies),
+# preview, one-tap order.
+id: streaming-household
+title: "4K streams buffer at night"
+description: "Five 4K TVs plus cloud backups max out a Gigabit plan at peak. Ultra 2 Gig recommended, with the free mobile year."
+intent: speed
+search_query: "4k streaming buffering on multiple tvs at night"
+match_keywords: [4k, streaming, stream, buffering, tvs, tv, netflix, "multiple tvs", movies]
+assistant_brief: >
+  Large household streaming 4K on several TVs at once. Confirm the line is healthy, cite how
+  many 4K streams and the hours at the limit, and recommend the offer marked recommended,
+  including its bundle. Preview, then order.
+tools:
+  - get_customer_profile
+  - check_area_outage
+  - run_line_diagnostics
+  - get_usage_profile
+  - get_eligible_offers
+  - preview_order
+  - submit_upgrade_order
+data_sources: {}
+suggested_replies:
+  - "Yes, upgrade me"
+  - "Is there a cheaper option?"
+  - "Do I need new equipment?"
+customer:
+  id: LUM-6006
+  first_name: Elena
+  plan_id: gig-1000
+  tenure_months: 52
+  region: Maple Grove
+  equipment:
+    gateway_model: LX-7 Wi-Fi 6E Gateway
+    firmware: "7.0.4"
+  outage: null
+  fault: null
+  mobile:
+    plan: Lumora Unlimited
+    lines:
+      - {line_id: LN-6A01, device: iPhone 16, device_condition: good}
+      - {line_id: LN-6A02, device: iPhone 15, device_condition: good}
+  line:
+    gateway_online: true
+    downstream_snr_db: 40.4
+    downstream_power_dbmv: -0.2
+    upstream_power_dbmv: 41.0
+    drops_24h: 0
+    uptime_hours: 1200
+  wifi:
+    coverage: good
+    connected_devices: 42
+    weakest_room: Patio
+    weakest_rssi_dbm: -65
+    interference: medium
+  usage:
+    peak_utilization_pct: 93
+    hours_at_cap_30d: 52
+    peak_hours: "7-11 PM"
+    measured_speed_mbps: 938
+    top_activities: [five 4K TV streams at once, nightly cloud backups, two remote workers on video calls]
+expected:
+  must_call: [run_line_diagnostics, get_usage_profile, get_eligible_offers, preview_order]
+  must_not_call: [reboot_gateway]
+  confirm_action: submit_upgrade_order
+  outcome: offer_accepted
