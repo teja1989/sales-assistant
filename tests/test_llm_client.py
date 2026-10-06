@@ -246,3 +246,95 @@ async def test_stream_works_end_to_end_through_proxy() -> None:
 
 def test_direct_route_without_proxy() -> None:
     assert OpenAIChatClient(make_settings(**AZURE)).route == "direct"
+
+
+# ------------------------------------------------------------ gateway mode
+GATEWAY = dict(LLM_PROVIDER="gateway", LLM_GATEWAY_URL="https://gw.example.com/completions/api?tenant=demo")
+
+COMPLETION = {
+    "choices": [
+        {
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+                "role": "assistant",
+                "content": "Let me check.",
+                "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "check_area_outage", "arguments": "{}"}}
+                ],
+            },
+        }
+    ],
+    "usage": {"total_tokens": 42},
+}
+
+
+@pytest.mark.anyio
+async def test_gateway_posts_to_url_as_given_without_key_or_model() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen["url"] = str(request.url)
+        seen["headers"] = {k.lower() for k in request.headers}
+        seen["body"] = json.loads(request.content)
+        return httpx2.Response(200, content=STREAM, headers={"content-type": "text/event-stream"})
+
+    client = OpenAIChatClient(make_settings(**GATEWAY), transport=httpx2.MockTransport(handler))
+    events = await collect(client)
+    assert seen["url"] == "https://gw.example.com/completions/api?tenant=demo"
+    assert "api-key" not in seen["headers"] and "authorization" not in seen["headers"]
+    assert "model" not in seen["body"] and seen["body"]["stream"] is True
+    assert isinstance(events[-1], TurnComplete) and len(events[-1].tool_calls) == 2
+    assert client.last_mode == "stream"
+
+
+@pytest.mark.anyio
+async def test_gateway_optional_key_header_and_model() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen["headers"] = dict(request.headers)
+        seen["body"] = json.loads(request.content)
+        return httpx2.Response(200, content=STREAM, headers={"content-type": "text/event-stream"})
+
+    settings = make_settings(
+        **GATEWAY,
+        LLM_GATEWAY_KEY_HEADER="Ocp-Apim-Subscription-Key",
+        LLM_GATEWAY_KEY="gk-1",
+        LLM_GATEWAY_MODEL="gpt-4.1",
+    )
+    await collect(OpenAIChatClient(settings, transport=httpx2.MockTransport(handler)))
+    assert seen["headers"]["ocp-apim-subscription-key"] == "gk-1"
+    assert seen["body"]["model"] == "gpt-4.1"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("content_type", ["application/json", "text/plain"])
+async def test_non_streamed_json_reply_is_accepted(content_type: str) -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, content=json.dumps(COMPLETION).encode(), headers={"content-type": content_type})
+
+    client = OpenAIChatClient(make_settings(**GATEWAY), transport=httpx2.MockTransport(handler))
+    events = await collect(client)
+    assert [e.text for e in events if isinstance(e, TextDelta)] == ["Let me check."]
+    done = events[-1]
+    assert isinstance(done, TurnComplete)
+    assert [(c.id, c.name) for c in done.tool_calls] == [("c1", "check_area_outage")]
+    assert done.usage == {"total_tokens": 42}
+
+
+def test_gateway_config_rules() -> None:
+    from app.config import ConfigError
+
+    assert make_settings(
+        LLM_PROVIDER="gateway", LLM_GATEWAY_URL="host.example.com/completions/api"
+    ).llm_gateway_url == ("https://host.example.com/completions/api")
+    with pytest.raises(ConfigError, match="LLM_GATEWAY_URL"):
+        make_settings(LLM_PROVIDER="gateway")
+    with pytest.raises(ConfigError, match="both"):
+        make_settings(**GATEWAY, LLM_GATEWAY_KEY_HEADER="x-key")
+    # The usual mix-up: the gateway URL put into the forward-proxy setting.
+    with pytest.raises(ConfigError, match="LLM_PROVIDER=gateway"):
+        make_settings(LLM_PROXY_URL="https://host.example.com/completions/api")
+    # Gateway mode doesn't need any AZURE_OPENAI_* values.
+    assert make_settings(**GATEWAY).azure_openai_endpoint == ""

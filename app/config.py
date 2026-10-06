@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
-LlmProvider = Literal["mock", "azure_openai", "openai_compatible"]
+LlmProvider = Literal["mock", "azure_openai", "openai_compatible", "gateway"]
 DataSource = Literal["sim", "live"]
 
 
@@ -141,6 +141,11 @@ class Settings:
     openai_compat_api_key: str = ""
     openai_compat_model: str = ""
     openai_compat_key_header: Literal["authorization", "api-key"] = "authorization"
+    # gateway: one full URL that fronts Azure (e.g. an internal API gateway that adds the key itself)
+    llm_gateway_url: str = ""
+    llm_gateway_key_header: str = ""  # optional, e.g. Ocp-Apim-Subscription-Key; empty = send no key
+    llm_gateway_key: str = ""
+    llm_gateway_model: str = ""  # optional "model" field; empty when the gateway picks the deployment
     llm_temperature: float = 0.2
     llm_max_tokens: int = 700
     llm_max_tokens_param: str = "max_tokens"
@@ -202,8 +207,8 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         raise ConfigError("APP_ENV must be one of local, dev, prod, test")
 
     provider = (get("LLM_PROVIDER") or "mock").lower()
-    if provider not in ("mock", "azure_openai", "openai_compatible"):
-        raise ConfigError("LLM_PROVIDER must be mock, azure_openai or openai_compatible")
+    if provider not in ("mock", "azure_openai", "openai_compatible", "gateway"):
+        raise ConfigError("LLM_PROVIDER must be mock, azure_openai, openai_compatible or gateway")
 
     override = (get("DATA_SOURCE_OVERRIDE") or "").lower()
     if override not in ("", "sim", "live"):
@@ -259,6 +264,10 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         openai_compat_api_key=get("OPENAI_COMPAT_API_KEY") or "",
         openai_compat_model=get("OPENAI_COMPAT_MODEL") or "",
         openai_compat_key_header=key_header,  # type: ignore[arg-type]
+        llm_gateway_url=_with_scheme((get("LLM_GATEWAY_URL") or "").strip()),
+        llm_gateway_key_header=(get("LLM_GATEWAY_KEY_HEADER") or "").strip(),
+        llm_gateway_key=get("LLM_GATEWAY_KEY") or "",
+        llm_gateway_model=(get("LLM_GATEWAY_MODEL") or "").strip(),
         llm_temperature=_float(get("LLM_TEMPERATURE"), 0.2),
         llm_max_tokens=_int(get("LLM_MAX_TOKENS"), 700),
         llm_max_tokens_param=get("LLM_MAX_TOKENS_PARAM") or "max_tokens",
@@ -300,6 +309,11 @@ def _validate_llm(s: Settings) -> None:
         proxy = urlsplit(s.llm_proxy_url)
         if proxy.scheme not in ("http", "https") or not proxy.hostname:
             raise ConfigError("LLM_PROXY_URL must look like http://proxy-host:port")
+        if proxy.path not in ("", "/") or proxy.query:
+            raise ConfigError(
+                "LLM_PROXY_URL is for a forward proxy (http://host:port) and must not have a path. "
+                "If this is the URL you POST chat requests to, set LLM_PROVIDER=gateway and LLM_GATEWAY_URL instead."
+            )
     if s.llm_ca_bundle and not Path(s.llm_ca_bundle).is_file():
         raise ConfigError(f"LLM_CA_BUNDLE file not found: {s.llm_ca_bundle}")
     if s.llm_provider == "azure_openai":
@@ -316,6 +330,14 @@ def _validate_llm(s: Settings) -> None:
             raise ConfigError(f"LLM_PROVIDER=azure_openai requires {', '.join(missing)}")
         if not s.azure_openai_endpoint.startswith("https://"):
             raise ConfigError("AZURE_OPENAI_ENDPOINT must start with https://")
+    elif s.llm_provider == "gateway":
+        if not s.llm_gateway_url:
+            raise ConfigError("LLM_PROVIDER=gateway requires LLM_GATEWAY_URL (the full URL to POST chat requests to)")
+        gw = urlsplit(s.llm_gateway_url)
+        if gw.scheme not in ("http", "https") or not gw.hostname:
+            raise ConfigError("LLM_GATEWAY_URL must be a full URL, e.g. https://gateway.example.com/completions/api")
+        if bool(s.llm_gateway_key_header) != bool(s.llm_gateway_key):
+            raise ConfigError("Set both LLM_GATEWAY_KEY_HEADER and LLM_GATEWAY_KEY, or neither")
     elif s.llm_provider == "openai_compatible":
         missing = [
             name
@@ -336,3 +358,10 @@ def describe_proxy(url: str) -> str:
         return ""
     parts = urlsplit(url)
     return f"{parts.hostname}:{parts.port}" if parts.port else str(parts.hostname)
+
+
+def _with_scheme(url: str) -> str:
+    """Accept "host.example.com/path" for convenience: assume https."""
+    if url and "://" not in url:
+        return f"https://{url}"
+    return url

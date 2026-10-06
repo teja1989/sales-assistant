@@ -7,7 +7,8 @@ The app is a single Python process (uvicorn) that serves the UI, the chat API an
 ```bash
 cf login -a <api> -o <org> -s <space>
 make env          # if you don't have a .env yet
-# edit .env: LLM_PROVIDER=azure_openai and the AZURE_OPENAI_* values; LIVE_MCP_* if used
+# edit .env: LLM_PROVIDER=gateway and LLM_GATEWAY_URL (or azure_openai + AZURE_OPENAI_*); LIVE_MCP_* if used
+make llm-check    # confirms the model answers and can call tools
 make cf-secrets   # creates the user-provided service "sales-assistant-secrets" from .env
 ```
 
@@ -42,19 +43,33 @@ To change a secret: edit `.env`, `make cf-secrets`, then `cf restage sales-assis
 
 Streaming (SSE) works through the CF router. The app sends `Cache-Control: no-cache` and `X-Accel-Buffering: no` so intermediaries don't buffer the stream.
 
-## Reaching Azure through a forward proxy
+## Calling Azure through your gateway (recommended setup)
 
-If the app can't reach `*.openai.azure.com` directly, route **only the model calls** through your proxy:
+If you have an internal URL in front of Azure that adds the Azure key itself and picks the deployment, use gateway mode. No `AZURE_OPENAI_*` values are needed.
 
 ```bash
 # .env (then: make cf-secrets && cf restage sales-assistant)
+LLM_PROVIDER=gateway                                   # manifest.yml already sets this
+LLM_GATEWAY_URL=https://<gateway-host>/completions/api # full URL, used exactly as given (query string kept)
+```
+
+- We POST the standard chat-completions body (`messages`, `tools`, `stream: true`) with no key and no `model`.
+- If the gateway wants a key, set `LLM_GATEWAY_KEY_HEADER` (e.g. `Ocp-Apim-Subscription-Key`) and `LLM_GATEWAY_KEY`. If it wants a model name in the body, set `LLM_GATEWAY_MODEL`.
+- If the gateway doesn't stream, it still works: the reply arrives all at once instead of word by word. `make llm-check` tells you which you have.
+- `LLM_PROXY_URL` is something else (below). Leave it empty unless your network also requires a forward proxy to reach the gateway.
+
+## Reaching the model through a forward proxy
+
+Only if the app can't reach the model host directly and your network gives you a forward proxy (`http://host:port`, no path), route **only the model calls** through it:
+
+```bash
 LLM_PROXY_URL=http://proxy.corp.example:8080
 ```
 
 - Only model traffic uses it. Live MCP calls and everything else go direct, so internal hosts don't get sent to the proxy by mistake. (A global `HTTPS_PROXY` would also be picked up by the model client when `LLM_PROXY_URL` is empty, but it affects every outbound call.)
-- HTTPS is tunnelled with `CONNECT`: TLS still ends at Azure, so the proxy sees the host name but not the key or prompts.
-- If the proxy **inspects TLS** (re-signs certificates), Python won't trust it and calls fail with "TLS certificate not trusted". Get the proxy's CA certificate (PEM) from your network team, commit it at e.g. `certs/corp-ca.pem` (it's a public certificate, not a secret) and set `LLM_CA_BUNDLE=certs/corp-ca.pem`.
-- The proxy must allow your Azure host (`<resource>.openai.azure.com:443`).
+- HTTPS is tunnelled with `CONNECT`: TLS still ends at the model host, so the proxy sees the host name but not keys or prompts.
+- If the proxy or gateway **inspects TLS** (re-signs certificates), Python won't trust it and calls fail with "TLS certificate not trusted". Get the CA certificate (PEM) from your network team, commit it at e.g. `certs/corp-ca.pem` (it's a public certificate, not a secret) and set `LLM_CA_BUNDLE=certs/corp-ca.pem`.
+- Putting a URL with a path into `LLM_PROXY_URL` is rejected with a message pointing to `LLM_GATEWAY_URL`.
 
 Check the connection before the demo:
 
@@ -62,7 +77,7 @@ Check the connection before the demo:
 make llm-check          # local, with your .env
 ```
 
-On Cloud Foundry, the startup log shows the route (`llm=azure_openai:gpt-4.1 (via proxy host:port)`), and you can run the same check inside the container if `cf ssh` is enabled in your space:
+On Cloud Foundry, the startup log shows the model and route (e.g. `llm=gateway (direct)`), and you can run the same check inside the container if `cf ssh` is enabled in your space:
 
 ```bash
 cf ssh sales-assistant
@@ -70,7 +85,7 @@ cf ssh sales-assistant
 python -m app.llm_check
 ```
 
-It prints the route, latency and the model's reply, or the failure with a hint (proxy unreachable, certificate, key, deployment name).
+It prints the target, route, latency, whether replies stream, and whether tool calling works (the assistant depends on it), or the failure with a hint.
 
 ## Exposing `/mcp` to other MCP clients
 

@@ -35,7 +35,14 @@ make run-mock     # no keys needed: offline scripted model
 # open http://localhost:8000
 ```
 
-To use Azure OpenAI, edit `.env`:
+To use the real model through your internal gateway (one URL in front of Azure that adds the key itself), edit `.env`:
+
+```bash
+LLM_PROVIDER=gateway
+LLM_GATEWAY_URL=https://<gateway-host>/completions/api
+```
+
+Or call Azure OpenAI directly:
 
 ```bash
 LLM_PROVIDER=azure_openai
@@ -44,7 +51,7 @@ AZURE_OPENAI_API_KEY=<key>
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
 ```
 
-Then `make dev` (auto-reload for Python and the UI) or `make run`.
+Check it with `make llm-check` (one plain request and one tool-calling request), then `make dev` (auto-reload for Python and the UI) or `make run`.
 
 Demo path: **Home → Start from a search → pick an example → Continue with Tidelink**, then open **Impact** in another tab.
 

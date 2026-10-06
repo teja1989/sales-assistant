@@ -6,6 +6,8 @@ to keep the dependency surface small and the wire behaviour explicit:
 * azure_openai:      POST {endpoint}/openai/deployments/{deployment}/chat/completions?api-version=...
                      header  api-key: <key>
 * openai_compatible: POST {base_url}/chat/completions   (e.g. Azure AI Foundry /openai/v1)
+* gateway:           POST {LLM_GATEWAY_URL} exactly as given (internal gateway in front of Azure);
+                     optional key header and model; a non-streamed JSON reply is also accepted
                      header  Authorization: Bearer <key>   or   api-key: <key>
 """
 
@@ -38,6 +40,7 @@ class OpenAIChatClient:
         self._verify: ssl.SSLContext | bool = (
             ssl.create_default_context(cafile=settings.llm_ca_bundle) if settings.llm_ca_bundle else True
         )
+        self.last_mode = ""  # "stream" or "json" after a call (shown by make llm-check)
         self.route = f"via proxy {describe_proxy(settings.llm_proxy_url)}" if settings.llm_proxy_url else "direct"
         if settings.llm_provider == "azure_openai":
             self.name = f"azure_openai:{settings.azure_openai_deployment}"
@@ -48,6 +51,15 @@ class OpenAIChatClient:
             self.params = {"api-version": settings.azure_openai_api_version}
             self.headers = {"api-key": settings.azure_openai_api_key}
             self.model: str | None = None
+        elif settings.llm_provider == "gateway":
+            # Full URL used exactly as given (its own query string is kept); key and model are optional.
+            self.name = f"gateway:{settings.llm_gateway_model}" if settings.llm_gateway_model else "gateway"
+            self.url = settings.llm_gateway_url
+            self.params = {}
+            self.headers = (
+                {settings.llm_gateway_key_header: settings.llm_gateway_key} if settings.llm_gateway_key_header else {}
+            )
+            self.model = settings.llm_gateway_model or None
         else:
             self.name = f"openai_compatible:{settings.openai_compat_model}"
             self.url = f"{settings.openai_compat_base_url}/chat/completions"
@@ -99,7 +111,7 @@ class OpenAIChatClient:
                 async with client.stream(
                     "POST",
                     self.url,
-                    params=self.params,
+                    params=self.params or None,
                     headers={**self.headers, "Content-Type": "application/json"},
                     json=body,
                 ) as response:
@@ -110,6 +122,14 @@ class OpenAIChatClient:
                             status=response.status_code,
                             retryable=response.status_code in RETRYABLE,
                         )
+                    content_type = response.headers.get("content-type", "")
+                    if "json" in content_type and "event-stream" not in content_type:
+                        # Some gateways ignore "stream": true and return one JSON completion.
+                        self.last_mode = "json"
+                        for event in _parse_completion(await response.aread()):
+                            yield event
+                        return
+                    self.last_mode = "stream"
                     async for event in _parse_sse(response.aiter_lines()):
                         yield event
             except httpx2.TimeoutException as exc:
@@ -136,14 +156,49 @@ def _safe_error(detail: str) -> str:
     return detail[:200]
 
 
+def _parse_completion(raw: bytes) -> list[LlmEvent]:
+    """Turn a non-streamed chat completion into the same events the stream produces."""
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise LlmError("LLM returned JSON that could not be parsed", retryable=False) from exc
+    choices = payload.get("choices") or []
+    if not choices:
+        raise LlmError("LLM response had no choices", retryable=False)
+    choice = choices[0]
+    message = choice.get("message") or {}
+    events: list[LlmEvent] = []
+    if message.get("content"):
+        events.append(TextDelta(message["content"]))
+    tool_calls = [
+        ToolCall(
+            id=tc.get("id") or f"call_{i}",
+            name=(tc.get("function") or {}).get("name", ""),
+            arguments=(tc.get("function") or {}).get("arguments") or "{}",
+        )
+        for i, tc in enumerate(message.get("tool_calls") or [])
+        if (tc.get("function") or {}).get("name")
+    ]
+    finish_reason = choice.get("finish_reason")
+    if finish_reason == "content_filter":
+        raise LlmError("Response blocked by the provider content filter", status=400)
+    events.append(TurnComplete(tool_calls=tool_calls, finish_reason=finish_reason, usage=payload.get("usage")))
+    return events
+
+
 async def _parse_sse(lines: AsyncIterator[str]) -> AsyncIterator[LlmEvent]:
     calls: dict[int, dict[str, str]] = {}
     finish_reason: str | None = None
     usage: dict[str, Any] | None = None
+    saw_data = False
+    other: list[str] = []  # in case a gateway sends plain JSON with a non-JSON content type
     async for line in lines:
         line = line.strip()
         if not line.startswith("data:"):
+            if not saw_data and len(other) < 2000:
+                other.append(line)
             continue
+        saw_data = True
         data = line[5:].strip()
         if data == "[DONE]":
             break
@@ -169,6 +224,10 @@ async def _parse_sse(lines: AsyncIterator[str]) -> AsyncIterator[LlmEvent]:
                     slot["arguments"] += fn["arguments"]
             if choice.get("finish_reason"):
                 finish_reason = choice["finish_reason"]
+    if not saw_data and "".join(other).lstrip().startswith("{"):
+        for event in _parse_completion("".join(other).encode()):
+            yield event
+        return
     tool_calls = [
         ToolCall(id=slot["id"] or f"call_{i}", name=slot["name"], arguments=slot["arguments"] or "{}")
         for i, slot in sorted(calls.items())

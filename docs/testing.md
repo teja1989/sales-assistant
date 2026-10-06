@@ -22,7 +22,7 @@ make smoke          # against a running app; BASE_URL=https://... for Cloud Foun
 
 ## Testing with the real model
 
-The automated suite uses the mock model so it's deterministic. Before a demo, run each scenario once with `LLM_PROVIDER=azure_openai` and watch for:
+The automated suite uses the mock model so it's deterministic. Before a demo, run `make llm-check`, then each scenario once with the real model (`LLM_PROVIDER=gateway` or `azure_openai`) and watch for:
 
 - the assistant diagnosing before recommending anything;
 - no offers in the outage and gateway-fault flows;

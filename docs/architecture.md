@@ -83,7 +83,7 @@ The MCP endpoint runs **stateless with JSON responses**, so any app instance can
 
 | To change | Edit |
 |---|---|
-| LLM provider or model | `.env` only (`LLM_PROVIDER`, Azure vars) |
+| LLM provider or model | `.env` only (`LLM_PROVIDER`, `LLM_GATEWAY_*` or Azure vars) |
 | Scenario behaviour | `scenarios/*.yaml` |
 | Prices, plans, promo, mobile bundle, devices, trade-in | `data/catalog.yaml` |
 | A tool's contract | `app/mcp_server.py` (+ `app/sim.py` for simulated behaviour) |
