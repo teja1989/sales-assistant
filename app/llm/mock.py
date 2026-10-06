@@ -95,12 +95,12 @@ class MockLlm:
             return "Happy to help. Let me pull up the details and what you'd personally get for it.", calls
         if "get_customer_profile" not in results and intent == "alert":
             calls = [(t, {}) for t in ("get_customer_profile", "check_service_alerts", "check_area_outage") if can(t)]
-            return "Let me check the alerts for your area and your account.", calls
+            return "Let me check what's happening in your area.", calls
         if "get_customer_profile" not in results:
             calls = [(t, {}) for t in ("get_customer_profile", "check_area_outage", "run_line_diagnostics") if can(t)]
             if intent == "speed" and can("get_usage_profile"):
                 calls.append(("get_usage_profile", {}))
-            return "Thanks for reaching out. I'm pulling up your account and running a quick remote check now.", calls
+            return "Hi, thanks for reaching out. Give me a moment while I take a look at your connection.", calls
 
         # 2. React to the most recent tool result.
         if last["role"] == "tool":
@@ -110,7 +110,10 @@ class MockLlm:
                 prior = next((m.get("content") or "" for m in reversed(messages) if m["role"] == "assistant"), "")
                 if "Confirm" in prior:
                     return "", []  # already told them to tap Confirm; don't repeat
-                return "Tap **Confirm** on the card and I'll take care of it, or **Not now** to skip.", []
+                return (
+                    "Whenever you're ready, just tap **Confirm** and I'll take care of it. If you'd rather not, tap **Not now**.",
+                    [],
+                )
             if data.get("status") == "declined_by_customer":
                 return "No problem, I won't do that. Is there anything else I can help with?", []
             if data.get("error"):
@@ -240,7 +243,10 @@ class MockLlm:
             calls = [("get_eligible_offers", {"need": need})]
             if need == "speed" and "get_usage_profile" not in results and can("get_usage_profile"):
                 calls.insert(0, ("get_usage_profile", {}))
-            return "Your connection itself is healthy. Let me check what would actually help.", calls
+            return (
+                "Good news: your connection itself is healthy. Let me see what would actually make a difference.",
+                calls,
+            )
 
         if offers is not None and not ordered:
             return self._present_offers(name, plan, diag, results), []

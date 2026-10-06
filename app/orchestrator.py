@@ -71,7 +71,7 @@ class Orchestrator:
 
     def _action_summary(self, session: Session, tool: str, args: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         if tool == "reboot_gateway":
-            return "Restart your gateway. You'll be offline for about 2 minutes.", {}
+            return "You'll be offline for about 2 minutes while it restarts.", {}
         if tool == "schedule_technician":
             return "Book the first available technician visit at no charge.", {"issue": args.get("issue_summary", "")}
         if tool == "apply_service_credit":
@@ -79,7 +79,7 @@ class Orchestrator:
             details = {"amount": amount} if amount is not None else {}
             return "Add an outage service credit to your next bill.", details
         if tool == "activate_storm_data_pass":
-            return "Turn on free unlimited mobile data on all your lines for 48 hours. No charge.", {"amount": 0.0}
+            return "Free unlimited mobile data on all your lines for the next 48 hours.", {"amount": 0.0}
         if tool == "submit_upgrade_order":
             offer_id = args.get("offer_id", "")
             offer = session.offers_seen.get(offer_id, {})

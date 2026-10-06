@@ -1,4 +1,5 @@
 import type { ChatItem, Json } from "../types";
+import { CONFIRM_HEADING } from "./Avatar";
 
 type ConfirmItem = Extract<ChatItem, { kind: "confirm" }>;
 
@@ -46,8 +47,8 @@ function Details({ details }: { details: Json }) {
 
 const STATE_TEXT: Record<ConfirmItem["state"], string> = {
   pending: "",
-  approved: "Confirmed",
-  declined: "Skipped",
+  approved: "Done, you confirmed this",
+  declined: "Skipped, nothing changed",
   superseded: "Replaced by a newer request",
 };
 
@@ -62,7 +63,7 @@ export function ConfirmCard({
 }) {
   return (
     <div className={`confirm-card confirm-${item.state}`} role="group" aria-label={item.title}>
-      <p className="confirm-title">{item.title}</p>
+      <p className="confirm-title">{CONFIRM_HEADING[item.tool] ?? item.title}</p>
       <p className="confirm-summary">{item.summary}</p>
       <Details details={item.details} />
       {item.state === "pending" ? (

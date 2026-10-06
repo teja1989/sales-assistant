@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { ApiError, api, streamTurn, type TurnBody } from "../api";
 import { Link } from "../router";
+import { Avatar, FRIENDLY_TOOL } from "../components/Avatar";
 import { BrandMark } from "../components/BrandMark";
 import { ConfirmCard } from "../components/ConfirmCard";
 import { SourceBadge, ToolCard } from "../components/ToolCard";
@@ -142,6 +143,9 @@ export function Chat({ config }: { config: AppConfig | null }) {
   );
   const tools = items.filter((i): i is Extract<ChatItem, { kind: "tool" }> => i.kind === "tool");
   const assistant = config?.assistant_name ?? "Tidelink";
+  const running = [...tools].reverse().find((t) => t.status === "running");
+  const streaming = items.some((i) => i.kind === "bot" && i.streaming);
+  const workingText = running ? `${FRIENDLY_TOOL[running.tool]?.working ?? "Working on it"}…` : "Typing…";
 
   if (fatal) {
     return (
@@ -182,20 +186,42 @@ export function Chat({ config }: { config: AppConfig | null }) {
         <main className="chat-column">
           <ol className="messages" aria-live="polite">
             {!session && <li className="notice notice-info">Connecting you with {assistant}…</li>}
-            {items.map((item) => {
+            {session && (
+              <li className="intro">
+                <Avatar size={56} state={busy && !items.length ? "thinking" : "idle"} label={`${assistant}, AI assistant`} />
+                <div>
+                  <p className="intro-name">
+                    {assistant} <span className="ai-tag">AI assistant</span>
+                  </p>
+                  <p className="intro-text">
+                    I can check your connection, explain your options in plain language, and take care of changes
+                    once you say so. You can ask for a person at any time.
+                  </p>
+                </div>
+              </li>
+            )}
+            {items.map((item, index) => {
               if (item.kind === "user")
                 return (
                   <li key={item.id} className="msg msg-user">
                     <p>{item.text}</p>
                   </li>
                 );
-              if (item.kind === "bot")
+              if (item.kind === "bot") {
+                const prev = items[index - 1];
+                const showAvatar = !prev || prev.kind === "user";
                 return (
-                  <li key={item.id} className={`msg msg-bot ${item.streaming ? "streaming" : ""}`}>
-                    <span className="msg-author">{assistant}</span>
-                    <Markdown text={item.text} />
+                  <li key={item.id} className="bot-row">
+                    <span className="bot-avatar-slot">
+                      {showAvatar && <Avatar state={item.streaming ? "speaking" : "idle"} />}
+                    </span>
+                    <div className={`msg msg-bot ${item.streaming ? "streaming" : ""}`}>
+                      {showAvatar && <span className="msg-author">{assistant}</span>}
+                      <Markdown text={item.text} />
+                    </div>
                   </li>
                 );
+              }
               if (item.kind === "tool")
                 return (
                   <li key={item.id} className="msg-tool">
@@ -214,7 +240,14 @@ export function Chat({ config }: { config: AppConfig | null }) {
                 </li>
               );
             })}
-            {busy && <li className="typing" aria-label={`${assistant} is working`}><span /><span /><span /></li>}
+            {busy && !streaming && (
+              <li className="bot-row typing-row" aria-live="polite">
+                <span className="bot-avatar-slot">
+                  <Avatar state="thinking" />
+                </span>
+                <span className="typing-text">{workingText}</span>
+              </li>
+            )}
           </ol>
 
           <div className="composer-wrap">

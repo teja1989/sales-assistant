@@ -1,4 +1,5 @@
 import type { ChatItem, Json } from "../types";
+import { FRIENDLY_TOOL } from "./Avatar";
 
 type ToolItem = Extract<ChatItem, { kind: "tool" }>;
 
@@ -288,10 +289,10 @@ export function ToolCard({ item }: { item: ToolItem }) {
     <div className={`tool-card tool-${item.status}`}>
       <div className="tool-head">
         <span className="tool-dot" aria-hidden="true" />
-        <span className="tool-title">{item.title}</span>
+        <span className="tool-title">{FRIENDLY_TOOL[item.tool]?.title ?? item.title}</span>
         <SourceBadge source={item.source} fallback={item.fallback} />
         {item.status === "running" ? (
-          <span className="tool-meta">checking</span>
+          <span className="tool-meta">working…</span>
         ) : (
           <span className="tool-meta">{item.latency} ms</span>
         )}
