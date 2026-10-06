@@ -1,0 +1,62 @@
+# Customer's internet keeps dropping. Root cause: gateway firmware hang.
+# Ideal outcome: diagnose, remote reboot (customer confirms), fixed. No upsell.
+id: gateway-fault
+title: "Internet keeps dropping"
+description: "Gateway firmware fault causing repeated drops. Fixed by a confirmed remote reboot. Upsell is blocked."
+intent: connectivity
+search_query: "why does my home internet keep dropping"
+match_keywords: [dropping, drops, disconnect, disconnecting, "keeps cutting", "cutting out", unstable, intermittent]
+assistant_brief: >
+  The customer reports repeated drops. Check outage and diagnostics first. If the gateway
+  has a fault fixable by reboot, offer the remote reboot. Do not discuss upgrades.
+tools:
+  - get_customer_profile
+  - check_area_outage
+  - run_line_diagnostics
+  - get_eligible_offers
+  - reboot_gateway
+  - schedule_technician
+# Per-tool data source. Anything not listed uses the simulator.
+data_sources:
+  get_customer_profile: sim
+suggested_replies:
+  - "It happens a few times every evening"
+  - "Can you just fix it?"
+  - "Should I upgrade my plan?"
+customer:
+  id: LUM-1001
+  first_name: Dana
+  plan_id: plus-500
+  tenure_months: 38
+  region: Riverside North
+  equipment:
+    gateway_model: LX-6 Wi-Fi 6 Gateway
+    firmware: "6.2.1"
+  outage: null
+  fault:
+    code: GW_FW_WATCHDOG
+    description: "The gateway's firmware watchdog has restarted the WAN link repeatedly; a remote reboot usually clears it."
+    fixable_by_reboot: true
+  line:
+    gateway_online: true
+    downstream_snr_db: 38.5
+    downstream_power_dbmv: 2.4
+    upstream_power_dbmv: 43.0
+    drops_24h: 7
+    uptime_hours: 412
+  wifi:
+    coverage: good
+    connected_devices: 18
+    weakest_room: Garage
+    weakest_rssi_dbm: -64
+    interference: low
+  usage:
+    peak_utilization_pct: 41
+    hours_at_cap_30d: 0
+    measured_speed_mbps: 492
+    top_activities: [HD streaming, video calls]
+expected:
+  must_call: [check_area_outage, run_line_diagnostics]
+  must_not_call: [submit_upgrade_order]
+  confirm_action: reboot_gateway
+  outcome: truck_roll_avoided

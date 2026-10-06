@@ -1,0 +1,43 @@
+# Simulated product catalog for the fictional ISP "Lumora".
+# Prices are demo values only. The assistant may only quote prices returned by
+# tools, and tools read them from this file.
+
+plans:
+  - id: essential-300
+    name: Essential 300
+    download_mbps: 300
+    upload_mbps: 20
+    monthly_price: 55.00
+  - id: plus-500
+    name: Plus 500
+    download_mbps: 500
+    upload_mbps: 20
+    monthly_price: 70.00
+  - id: gig-1000
+    name: Gigabit
+    download_mbps: 1000
+    upload_mbps: 35
+    monthly_price: 85.00
+  - id: ultra-2000
+    name: Ultra 2 Gig
+    download_mbps: 2000
+    upload_mbps: 200
+    monthly_price: 110.00
+
+upgrade_promo:
+  months: 12
+  monthly_discount: 10.00
+  terms: "Promo applies for 12 months on plan upgrades. No contract; cancel or change anytime."
+
+equipment:
+  - id: mesh-pod
+    name: Lumora Mesh Pod
+    description: "Extends whole-home Wi-Fi to weak rooms. Ships free, self-install in about 10 minutes."
+    monthly_price: 7.00
+
+credits:
+  outage_credit: 10.00
+
+technician:
+  first_available: "Tomorrow, 8:00-10:00 AM"
+  visit_fee: 0.00

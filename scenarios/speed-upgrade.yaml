@@ -1,0 +1,59 @@
+# Customer wants faster internet. Line is healthy and the household maxes out the plan.
+# Ideal outcome: verify health, show real usage, recommend the right tier, order on confirm.
+id: speed-upgrade
+title: "I want faster internet"
+description: "Healthy line, household regularly maxes out its plan. Data-backed upgrade recommendation and a confirmed order."
+intent: speed
+search_query: "how to get faster internet speed at home"
+match_keywords: [faster, speed, slow, upgrade, "more speed", lag, buffering, gig, mbps]
+assistant_brief: >
+  The customer wants more speed. Confirm the line is healthy, then use the usage profile
+  to explain why they hit their plan limit, and recommend the eligible offer marked
+  recommended. Mention the promo price only as returned by get_eligible_offers.
+tools:
+  - get_customer_profile
+  - check_area_outage
+  - run_line_diagnostics
+  - get_usage_profile
+  - get_eligible_offers
+  - submit_upgrade_order
+data_sources: {}
+suggested_replies:
+  - "Yes, upgrade me"
+  - "What does it cost after the promo?"
+  - "Is there anything cheaper?"
+customer:
+  id: LUM-3003
+  first_name: Priya
+  plan_id: essential-300
+  tenure_months: 26
+  region: Lakeview
+  equipment:
+    gateway_model: LX-6 Wi-Fi 6 Gateway
+    firmware: "6.2.1"
+  outage: null
+  fault: null
+  line:
+    gateway_online: true
+    downstream_snr_db: 39.2
+    downstream_power_dbmv: 1.1
+    upstream_power_dbmv: 41.5
+    drops_24h: 0
+    uptime_hours: 640
+  wifi:
+    coverage: good
+    connected_devices: 31
+    weakest_room: Back porch
+    weakest_rssi_dbm: -66
+    interference: medium
+  usage:
+    peak_utilization_pct: 97
+    hours_at_cap_30d: 46
+    peak_hours: "7-11 PM"
+    measured_speed_mbps: 296
+    top_activities: [three 4K streams, cloud photo backup, online gaming, video calls]
+expected:
+  must_call: [run_line_diagnostics, get_usage_profile, get_eligible_offers]
+  must_not_call: [reboot_gateway]
+  confirm_action: submit_upgrade_order
+  outcome: offer_accepted

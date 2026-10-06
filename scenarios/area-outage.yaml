@@ -1,0 +1,58 @@
+# Customer's internet is down because of an area outage.
+# Ideal outcome: explain cause and ETA, proactively apply a credit, no reboot, no upsell.
+id: area-outage
+title: "Internet is down"
+description: "Area outage. The assistant explains cause and ETA, applies a goodwill credit and avoids a pointless reboot or upsell."
+intent: connectivity
+search_query: "my internet is not working right now"
+match_keywords: [down, outage, "not working", "no internet", offline, "stopped working", dead]
+assistant_brief: >
+  The customer has no service. If there is an area outage, explain the cause and restore
+  time in plain words, tell them a reboot won't help, and offer the outage credit.
+tools:
+  - get_customer_profile
+  - check_area_outage
+  - run_line_diagnostics
+  - get_eligible_offers
+  - reboot_gateway
+  - apply_service_credit
+data_sources: {}
+suggested_replies:
+  - "How long will it take?"
+  - "Should I restart my modem?"
+  - "I work from home, this is frustrating"
+customer:
+  id: LUM-2002
+  first_name: Marcus
+  plan_id: gig-1000
+  tenure_months: 71
+  region: Oak Hills East
+  equipment:
+    gateway_model: LX-7 Wi-Fi 6E Gateway
+    firmware: "7.0.4"
+  outage:
+    id: OUT-88213
+    status: active
+    cause: "a damaged fiber node after overnight storms"
+    eta_minutes: 95
+    affected_homes: 1240
+  fault: null
+  line:
+    gateway_online: false
+    downstream_snr_db: 0
+    downstream_power_dbmv: 0
+    upstream_power_dbmv: 0
+    drops_24h: 1
+    uptime_hours: 0
+  wifi:
+    coverage: good
+    connected_devices: 24
+  usage:
+    peak_utilization_pct: 35
+    hours_at_cap_30d: 0
+    measured_speed_mbps: 0
+expected:
+  must_call: [check_area_outage]
+  must_not_call: [submit_upgrade_order, reboot_gateway]
+  confirm_action: apply_service_credit
+  outcome: credit_applied

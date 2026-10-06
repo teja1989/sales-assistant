@@ -1,0 +1,57 @@
+# Customer thinks they need more speed, but the real problem is Wi-Fi reach.
+# Ideal outcome: say honestly a faster plan won't help, recommend a mesh pod instead.
+id: weak-wifi
+title: "Slow internet upstairs"
+description: "Plan has plenty of headroom; one room has weak Wi-Fi. The assistant recommends a mesh pod, not a pricier plan."
+intent: wifi
+search_query: "internet slow in upstairs bedroom"
+match_keywords: [upstairs, bedroom, room, wifi, wi-fi, "dead zone", coverage, signal, basement]
+assistant_brief: >
+  The customer says one part of the home is slow. If diagnostics show weak Wi-Fi coverage,
+  be honest that a faster plan will not fix it and recommend Wi-Fi equipment (need='wifi').
+tools:
+  - get_customer_profile
+  - check_area_outage
+  - run_line_diagnostics
+  - get_usage_profile
+  - get_eligible_offers
+  - submit_upgrade_order
+data_sources: {}
+suggested_replies:
+  - "Yes, add the pod"
+  - "Wouldn't a faster plan fix it?"
+  - "How do I set it up?"
+customer:
+  id: LUM-4004
+  first_name: Sam
+  plan_id: gig-1000
+  tenure_months: 14
+  region: Hillcrest
+  equipment:
+    gateway_model: LX-6 Wi-Fi 6 Gateway
+    firmware: "6.2.1"
+  outage: null
+  fault: null
+  line:
+    gateway_online: true
+    downstream_snr_db: 40.1
+    downstream_power_dbmv: -0.8
+    upstream_power_dbmv: 42.0
+    drops_24h: 0
+    uptime_hours: 900
+  wifi:
+    coverage: weak
+    connected_devices: 15
+    weakest_room: Upstairs bedroom
+    weakest_rssi_dbm: -79
+    interference: medium
+  usage:
+    peak_utilization_pct: 28
+    hours_at_cap_30d: 0
+    measured_speed_mbps: 941
+    top_activities: [HD streaming, remote work]
+expected:
+  must_call: [run_line_diagnostics, get_eligible_offers]
+  must_not_call: [reboot_gateway]
+  confirm_action: submit_upgrade_order
+  outcome: offer_accepted

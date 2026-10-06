@@ -1,0 +1,103 @@
+# Lumora Assist
+
+A working prototype of an **MCP-connected chat assistant** for a home-internet provider. A customer searches in an external AI assistant, lands in our chat with their question already known, and the assistant uses MCP tools to **fix the problem first, then recommend an upgrade only when the data supports it**.
+
+"Lumora" is a fictional brand. All customer, network and pricing data is simulated unless you connect a live MCP server.
+
+## What it shows
+
+| Scenario | What happens | Business outcome |
+|---|---|---|
+| Internet keeps dropping | Diagnostics find a gateway fault; remote reboot after the customer confirms | Truck roll avoided, no upsell while broken |
+| Internet is down | Area outage found; ETA explained; goodwill credit applied on confirm | Contained without an agent, no pointless reboot |
+| I want faster internet | Healthy line, usage at 97% of plan; right-sized upgrade on confirm | Data-backed upsell, incremental revenue |
+| Slow upstairs | Plan has headroom, Wi-Fi is weak; mesh pod instead of a pricier plan | Honest sale that actually fixes the issue |
+
+A live **impact dashboard** counts containment, truck rolls avoided, offer conversion, new monthly revenue, upsells held back until a fault was fixed, and guardrail interventions. Every number is derived from tool results and confirmed actions, never from what the model said.
+
+## Quick start
+
+Requirements: Python 3.12+, Node 18+ (Node 22 recommended), `make`.
+
+```bash
+make setup        # venv + pip deps, npm deps, .env with generated secrets, UI build
+make run-mock     # no keys needed: offline scripted model
+# open http://localhost:8000
+```
+
+To use Azure OpenAI, edit `.env`:
+
+```bash
+LLM_PROVIDER=azure_openai
+AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
+AZURE_OPENAI_API_KEY=<key>
+AZURE_OPENAI_DEPLOYMENT=gpt-4.1
+```
+
+Then `make dev` (auto-reload for Python and the UI) or `make run`.
+
+Demo path: **Home → Start from a search → pick an example → Continue in Lumora Assist**, then open **Impact** in another tab.
+
+## Make targets
+
+| Command | What it does |
+|---|---|
+| `make setup` | One-time setup |
+| `make dev` | API with reload + UI rebuild on change |
+| `make run` / `make run-mock` | Run as on Cloud Foundry / with the offline model |
+| `make test` | Python tests (scenarios, red-team guardrails, security, MCP contract, LLM client) |
+| `make lint` / `make fmt` | Ruff lint / format |
+| `make typecheck-web` | TypeScript check |
+| `make check` | Everything CI runs |
+| `make smoke` | End-to-end smoke test of a running app (`BASE_URL=...` for CF) |
+| `make mcp-inspect` | Open MCP Inspector against `/mcp` |
+| `make cf-secrets` / `make cf-push` | Store secrets in a CF user-provided service / build and push |
+
+## How it fits together
+
+```
+Browser (React)
+   │  SSE stream: text, tool cards, confirm cards
+   ▼
+Starlette app ── /api/*  chat API ── Orchestrator ── Azure OpenAI (or mock)
+   │                                      │
+   │                                      ├─ MCP client (in-process) ─► our MCP server (simulated APIs)
+   │                                      └─ MCP client (HTTP + Authorization) ─► live MCP server
+   └── /mcp  the same MCP server over Streamable HTTP, bearer-token protected
+```
+
+Read more:
+
+- [Architecture](docs/architecture.md): request flow, events, data-source routing
+- [Adding a scenario](docs/adding-scenarios.md): YAML only, auto-tested
+- [Connecting live data](docs/live-mcp.md): point flows at your real MCP endpoint
+- [Security](docs/security.md): what is enforced in code, threat model, known gaps
+- [Deploying to Cloud Foundry](docs/deployment-cloud-foundry.md)
+- [Testing](docs/testing.md)
+- [Demo script](docs/demo-script.md): a 7-minute walkthrough
+
+## Project layout
+
+```
+app/
+  main.py            app factory, routes, middleware wiring
+  orchestrator.py    agent loop and server-side guardrails
+  mcp_server.py      MCP tools (the contract)
+  mcp_gateway.py     routes each tool to sim (in-process) or live (HTTP) MCP
+  sim.py             simulated backend + business rules
+  llm/               Azure OpenAI / OpenAI-compatible client, offline mock
+  scenarios.py       scenario YAML loader and matcher
+  handoff.py         signed single-use search handoff tokens
+  metrics.py         impact metrics
+  security.py        headers, bearer auth, basic auth, rate limit, body limit
+scenarios/*.yaml     one file per scenario
+data/catalog.yaml    simulated plans, prices, promo, equipment
+web/                 React + TypeScript UI (esbuild)
+tests/               pytest suite
+```
+
+## Notes and limitations
+
+- **Muse:** consumer Muse can't reach a server on a laptop or private network; it needs a public HTTPS MCP endpoint. This prototype demos the same MCP server through our own chat. Once `/mcp` is hosted publicly with a token, Muse (or any MCP client) can connect to it.
+- **State is in memory** (sessions, metrics). Run one instance; add Redis before scaling out.
+- **Build tooling:** the backend uses Starlette (the framework FastAPI is built on) and the UI is bundled with esbuild instead of Vite. Both keep dependencies small; the API shape is unchanged.

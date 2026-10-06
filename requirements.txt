@@ -1,0 +1,9 @@
+# Runtime dependencies (installed by the Cloud Foundry Python buildpack).
+# Pinned to the versions the test suite was run against.
+mcp==2.2.0
+starlette==1.6.0
+uvicorn==0.53.0
+pydantic==2.13.5
+PyYAML==6.0.3
+httpx2==2.13.0
+PyJWT==2.14.0
