@@ -7,6 +7,6 @@ def build_llm(settings: Settings) -> LlmClient:
         from app.llm.mock import MockLlm
 
         return MockLlm(settings.mock_stream_delay_ms)
-    from app.llm.openai_chat import OpenAIChatClient
+    from app.llm.azure_openai import AzureOpenAIClient
 
-    return OpenAIChatClient(settings)
+    return AzureOpenAIClient(settings)

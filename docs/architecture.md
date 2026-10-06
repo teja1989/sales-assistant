@@ -17,7 +17,7 @@ flowchart LR
     MCP[/mcp<br/>MCP server/]
     SIM[(Simulated backend)]
   end
-  LLM[Model proxy → Azure OpenAI<br/>or mock]
+  LLM[Azure OpenAI SDK<br/>or mock]
   LIVE[Live MCP server<br/>real APIs]
 
   S -- handoff token --> C
@@ -75,7 +75,7 @@ The MCP endpoint runs **stateless with JSON responses**, so any app instance can
 
 | To change | Edit |
 |---|---|
-| Model endpoint | `.env` only (`LLM_PROXY_URL`, `LLM_PROXY_KEY`) |
+| Model endpoint | `.env` / secrets service (`AZURE_OPENAI_*`); CF proxy via bound service |
 | Scenario behaviour | `scenarios/*.yaml` |
 | Prices, plans, promo, mobile bundle, devices, trade-in | `data/catalog.yaml` |
 | A tool's contract | `app/mcp_server.py` (+ `app/sim.py` for simulated behaviour) |

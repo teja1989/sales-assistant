@@ -18,20 +18,22 @@ make smoke          # against a running app; BASE_URL=https://... for Cloud Foun
 | `tests/test_sim_rules.py` | Business rules: no upsell while broken, right-sized recommendations, honest "you don't need it", credit once, idempotent orders, free mobile year on 800+, trade-in and valued-customer bonus, device orders, storm pass once |
 | `tests/test_mcp_contract.py` | Tool inventory, read/action classification, `customer_id` hidden from the model, live-first routing with simulator fallback (missing tool, live error, outage), scenario validation |
 | `tests/test_oauth.py` | Full authorization-code + PKCE flow; wrong verifier, code reuse, burned codes, redirect-URI mismatch, foreign redirect URIs, plain PKCE, unknown client/scope, tampered consent, cancel; sessions need valid tokens; identity from token wins; view-only blocks actions; disconnect and revocation; log masking |
-| `tests/test_llm_client.py` | Request goes to `LLM_PROXY_URL` as given with no model field, `LLM_PROXY_KEY` header rule, non-streamed JSON replies, streamed text + tool-call assembly, Azure filter chunks, retry on 429, errors without key leakage, content filter |
+| `tests/test_llm_client.py` | Azure SDK client: arguments passed to `chat.completions.create` (deployment, stream, tools), streamed chunks to events including split tool calls, error mapping without key leakage (401, timeout, certificate, connection), clear error if the SDK is missing, proxy detection |
 
 ## Testing with the real model
 
-The automated suite uses the mock model so it's deterministic. Before a demo, run `make llm-check`, then each scenario once with the real model (`LLM_PROXY_URL` set) and watch for:
+The automated suite uses the mock model so it's deterministic. Before a demo, run `make llm-check`, then each scenario once with the real model (`AZURE_OPENAI_*` set) and watch for:
 
 - the assistant diagnosing before recommending anything;
 - no offers in the outage and gateway-fault flows;
 - prices only matching the offer cards (a guardrail notice means the model tried to improvise one);
 - the confirm card appearing for reboot, credit and orders.
 
-If the proxy is unavailable on demo day, clear `LLM_PROXY_URL` (or `make run-mock`): the flows and dashboard still work with the offline mock.
+If Azure is unavailable on demo day, clear `AZURE_OPENAI_ENDPOINT` (or `make run-mock`): the flows and dashboard still work with the offline mock.
 
 ## Not automated yet
+
+- The real `openai` SDK isn't installable in the build sandbox, so unit tests use a stand-in with the SDK's interface. `make llm-check` is the end-to-end check against the real SDK and Azure.
 
 - Browser end-to-end tests (Playwright).
 - A scored evaluation run against Azure (tool order, price accuracy, tone) across many phrasings of each search.

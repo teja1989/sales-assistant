@@ -27,7 +27,7 @@ web-install: ## Install web dependencies
 
 env: ## Create .env from .env.example (never overwrites)
 	@if [ -f .env ]; then echo ".env already exists; leaving it alone"; else \
-	  cp .env.example .env && echo "Created .env: set LLM_PROXY_URL (and LIVE_MCP_URL if you have one)"; fi
+	  cp .env.example .env && echo "Created .env: set the AZURE_OPENAI_* values (and LIVE_MCP_URL if you have one)"; fi
 
 # ------------------------------------------------------------------ run
 dev: ## Run API with auto-reload + rebuild UI on change (http://localhost:8000)
@@ -39,8 +39,8 @@ dev: ## Run API with auto-reload + rebuild UI on change (http://localhost:8000)
 run: build-web ## Build the UI and run the app as it runs on Cloud Foundry
 	$(BIN)/python -m uvicorn app.main:app --port $(PORT) --proxy-headers
 
-run-mock: build-web ## Run with the offline mock model (ignores LLM_PROXY_URL)
-	LLM_PROXY_URL= $(BIN)/python -m uvicorn app.main:app --port $(PORT)
+run-mock: build-web ## Run with the offline mock model (ignores AZURE_OPENAI_*)
+	AZURE_OPENAI_ENDPOINT= $(BIN)/python -m uvicorn app.main:app --port $(PORT)
 
 build-web: ## Bundle the React UI into app/static
 	cd web && npm run build
@@ -62,7 +62,7 @@ typecheck-web: ## Type-check the React app
 
 check: lint test typecheck-web build-web ## Everything CI runs
 
-llm-check: ## Check LLM_PROXY_URL answers and can call tools
+llm-check: ## Check Azure OpenAI answers and can call tools (shows the proxy in effect)
 	$(BIN)/python -m app.llm_check
 
 smoke: ## Smoke-test a running app (BASE_URL=... to target Cloud Foundry)

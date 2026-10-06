@@ -4,7 +4,7 @@ It follows the same contract as a real model: it reads the conversation
 (including tool results) and either streams text or requests tool calls. It
 never invents prices: every number it says comes from a tool result.
 
-Used when LLM_PROXY_URL is empty. Useful as a demo-day fallback if the proxy is down.
+Used when AZURE_OPENAI_ENDPOINT is empty. Useful as a demo-day fallback if Azure is unreachable.
 """
 
 from __future__ import annotations

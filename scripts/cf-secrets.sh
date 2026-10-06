@@ -7,7 +7,8 @@ set -euo pipefail
 ENV_FILE="${1:-.env}"
 SERVICE="${SECRETS_SERVICE_NAME:-sales-assistant-secrets}"
 KEYS=(
-  LLM_PROXY_URL LLM_PROXY_KEY LIVE_MCP_URL LIVE_MCP_TOKEN
+  AZURE_OPENAI_ENDPOINT AZURE_OPENAI_API_KEY AZURE_OPENAI_DEPLOYMENT AZURE_OPENAI_API_VERSION
+  LIVE_MCP_URL LIVE_MCP_TOKEN
   MCP_SERVER_TOKEN LIVE_TOOL_MAP
 )
 
@@ -26,8 +27,8 @@ from pathlib import Path
 env_file, out, *keys = sys.argv[1:]
 values = _read_dotenv(Path(env_file))
 creds = {k: values[k] for k in keys if values.get(k)}
-if not creds.get("LLM_PROXY_URL"):
-    print("Note: LLM_PROXY_URL is empty, so the app will use the offline mock model.")
+if not creds.get("AZURE_OPENAI_ENDPOINT"):
+    print("Note: AZURE_OPENAI_ENDPOINT is empty, so the app will use the offline mock model.")
 Path(out).write_text(json.dumps(creds))
 print("Keys to store:", ", ".join(sorted(creds)))
 PY

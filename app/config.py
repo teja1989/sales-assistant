@@ -1,8 +1,9 @@
 """Runtime configuration.
 
-Only four settings matter for a normal run (see .env.example):
-    LLM_PROXY_URL   the URL we POST chat requests to (empty = offline mock model)
-    LLM_PROXY_KEY   optional key for it ("Bearer x" -> Authorization header, else api-key header)
+The settings that matter (see .env.example); the same names locally and on Cloud Foundry:
+    AZURE_OPENAI_ENDPOINT / _API_KEY / _DEPLOYMENT / _API_VERSION
+                    Azure OpenAI via the official SDK (empty endpoint = offline mock model).
+                    On CF the bound proxy service sets HTTPS_PROXY, which the SDK uses automatically.
     LIVE_MCP_URL    live MCP server for real data (empty = simulator for everything)
     LIVE_MCP_TOKEN  optional token for it (sent as Authorization: Bearer)
 Everything else has a sensible default; the optional knobs are listed in docs/configuration.md.
@@ -29,7 +30,7 @@ log = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
-LlmProvider = Literal["mock", "proxy"]
+LlmProvider = Literal["mock", "azure_openai"]
 DataSource = Literal["sim", "live"]
 
 
@@ -138,10 +139,11 @@ class Settings:
     tagline: str = "Always on, like the tide."
     log_level: str = "INFO"
 
-    # Model: one URL (an internal proxy in front of Azure OpenAI). Empty = offline mock model.
-    llm_proxy_url: str = ""
-    llm_proxy_key: str = ""
-    llm_ca_bundle: str = ""  # optional PEM file if the proxy uses an internal CA
+    # Model: Azure OpenAI through the official SDK. Empty endpoint = offline mock model.
+    azure_openai_endpoint: str = ""
+    azure_openai_api_key: str = ""
+    azure_openai_deployment: str = ""
+    azure_openai_api_version: str = "2024-10-21"
     llm_temperature: float = 0.2
     llm_max_tokens: int = 700
     llm_max_tokens_param: str = "max_tokens"
@@ -180,7 +182,7 @@ class Settings:
 
     @property
     def llm_provider(self) -> LlmProvider:
-        return "proxy" if self.llm_proxy_url else "mock"
+        return "azure_openai" if self.azure_openai_endpoint else "mock"
 
     @property
     def live_configured(self) -> bool:
@@ -223,9 +225,10 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         brand_name=get("BRAND_NAME") or "",
         tagline=get("TAGLINE") or "Always on, like the tide.",
         log_level=(get("LOG_LEVEL") or "INFO").upper(),
-        llm_proxy_url=_with_scheme((get("LLM_PROXY_URL") or "").strip()),
-        llm_proxy_key=(get("LLM_PROXY_KEY") or "").strip(),
-        llm_ca_bundle=(get("LLM_CA_BUNDLE") or "").strip(),
+        azure_openai_endpoint=_with_scheme((get("AZURE_OPENAI_ENDPOINT") or "").strip()).rstrip("/"),
+        azure_openai_api_key=(get("AZURE_OPENAI_API_KEY") or "").strip(),
+        azure_openai_deployment=(get("AZURE_OPENAI_DEPLOYMENT") or "").strip(),
+        azure_openai_api_version=(get("AZURE_OPENAI_API_VERSION") or "2024-10-21").strip(),
         llm_temperature=_float(get("LLM_TEMPERATURE"), 0.2),
         llm_max_tokens=_int(get("LLM_MAX_TOKENS"), 700),
         llm_max_tokens_param=get("LLM_MAX_TOKENS_PARAM") or "max_tokens",
@@ -258,22 +261,22 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
 
 
 def _validate(s: Settings) -> None:
-    for name, url in (("LLM_PROXY_URL", s.llm_proxy_url), ("LIVE_MCP_URL", s.live_mcp_url)):
+    for name, url in (("AZURE_OPENAI_ENDPOINT", s.azure_openai_endpoint), ("LIVE_MCP_URL", s.live_mcp_url)):
         if url:
             parts = urlsplit(url)
             if parts.scheme not in ("http", "https") or not parts.hostname:
                 raise ConfigError(f"{name} must be a full URL, e.g. https://host.example.com/path")
-    if s.llm_ca_bundle and not Path(s.llm_ca_bundle).is_file():
-        raise ConfigError(f"LLM_CA_BUNDLE file not found: {s.llm_ca_bundle}")
-
-
-def proxy_auth_header(key: str) -> dict[str, str]:
-    """LLM_PROXY_KEY convention: "Bearer <token>" goes in Authorization; anything else in api-key."""
-    if not key:
-        return {}
-    if key.lower().startswith("bearer "):
-        return {"Authorization": key}
-    return {"api-key": key}
+    if s.azure_openai_endpoint:
+        missing = [
+            name
+            for name, value in (
+                ("AZURE_OPENAI_API_KEY", s.azure_openai_api_key),
+                ("AZURE_OPENAI_DEPLOYMENT", s.azure_openai_deployment),
+            )
+            if not value
+        ]
+        if missing:
+            raise ConfigError(f"AZURE_OPENAI_ENDPOINT is set, so {' and '.join(missing)} must be set too")
 
 
 def display_url(url: str) -> str:

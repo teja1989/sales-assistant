@@ -13,8 +13,9 @@ from app.main import create_app
 
 TEST_ENV = {
     "APP_ENV": "test",
-    "LLM_PROXY_URL": "",  # offline mock model, whatever a developer's .env says
-    "LLM_PROXY_KEY": "",
+    "AZURE_OPENAI_ENDPOINT": "",  # offline mock model, whatever a developer's .env says
+    "AZURE_OPENAI_API_KEY": "",
+    "AZURE_OPENAI_DEPLOYMENT": "",
     "MOCK_STREAM_DELAY_MS": "0",
     "MCP_AUTH_REQUIRED": "true",  # most security tests exercise /mcp with auth on
     "MCP_SERVER_TOKEN": "test-mcp-token-0123456789abcdef",
