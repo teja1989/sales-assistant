@@ -32,8 +32,29 @@ class PiiMaskingFilter(logging.Filter):
             message = record.getMessage()
         except Exception:  # noqa: BLE001 - never break logging
             return True
-        record.msg = mask_pii(message)
+        record.msg = mask_path(mask_pii(message))
         record.args = None
+        return True
+
+
+_SESSION_PATH = re.compile(r"(/api/sessions/)[A-Za-z0-9_-]{8,}")
+_TOKEN_PARAM = re.compile(r"((?:ctx|token|handoff_token)=)[^&\s#]+", re.I)
+
+
+def mask_path(path: str) -> str:
+    """Session ids are bearer secrets and handoff tokens are credentials: never log them."""
+    return _TOKEN_PARAM.sub(r"\1<redacted>", _SESSION_PATH.sub(r"\1<id>", path))
+
+
+class AccessLogFilter(logging.Filter):
+    """Masks the request path in uvicorn access logs without breaking its formatter (which needs args)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            record.args = (*args[:2], mask_path(args[2]), *args[3:])
+        elif isinstance(record.msg, str):
+            record.msg = mask_path(record.msg)
         return True
 
 
@@ -45,5 +66,8 @@ def configure_logging(level: str = "INFO") -> None:
     root.handlers = [handler]
     root.setLevel(level)
     # Quiet noisy libraries unless debugging.
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, AccessLogFilter) for f in access.filters):
+        access.addFilter(AccessLogFilter())
     for noisy in ("httpx", "httpx2", "httpcore", "httpcore2", "mcp"):
         logging.getLogger(noisy).setLevel(max(logging.WARNING, root.level))

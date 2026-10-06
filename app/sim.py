@@ -199,12 +199,23 @@ class SimStore:
         }
 
     # ------------------------------------------------------------ mobile + devices
+    _VARIANTS = ("max", "plus", "mini", "air", "ultra", "fold", "flip", "lite", "se", "e")
+
     def _find_device(self, model: str) -> dict[str, Any]:
         text = " ".join(model.lower().replace("-", " ").split())
+        words = set(text.split())
         for device in self._devices.values():
             names = [device["name"].lower(), *device.get("match", [])]
-            if any(name in text or text in name for name in names if len(text) >= 3):
-                return device
+            if not any(f" {name} " in f" {text} " or (len(text) >= 6 and text in name) for name in names):
+                continue
+            # "iPhone 18 Pro Max" must not be answered with iPhone 18 Pro facts and prices.
+            device_words = set(device["name"].lower().split())
+            if any(v in words and v not in device_words for v in self._VARIANTS):
+                continue
+            # A different generation ("iPhone 17") isn't this device either.
+            if any(w.isdigit() and w not in device_words for w in words):
+                continue
+            return device
         available = ", ".join(d["name"] for d in self._devices.values())
         raise SimError(f"That device isn't in our catalog yet. Available: {available}.")
 
@@ -234,6 +245,15 @@ class SimStore:
         price = device["starting_price"]
         months = device["installment_months"]
         net = max(price - trade["total_trade_in_credit"], 0.0)
+        asked_storage = next(
+            (opt for opt in device["storage_options"] if opt.lower() in model.lower().replace(" ", "")), None
+        )
+        pricing_note = None
+        if asked_storage and asked_storage != device["starting_storage"]:
+            pricing_note = (
+                f"Only the {device['starting_storage']} price is available here; {asked_storage} pricing "
+                "is not in the catalog. Do not estimate it."
+            )
         return {
             "device": {
                 "name": device["name"],
@@ -249,6 +269,8 @@ class SimStore:
                 "full_price": _money(price),
                 "installment_months": months,
                 "monthly_installment": _money(price / months),
+                "priced_storage": device["starting_storage"],
+                "note": pricing_note,
             },
             "trade_in": trade,
             "offer": {

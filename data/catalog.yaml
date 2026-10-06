@@ -59,7 +59,7 @@ devices:
   - id: iphone-18-pro
     name: iPhone 18 Pro
     maker: Apple
-    match: ["iphone 18 pro", "iphone18 pro", "apple 18 pro", "18 pro"]
+    match: ["iphone 18 pro", "iphone18 pro", "apple 18 pro", "18 pro", "iphone", "new iphone"]
     starting_price: 1199.00
     starting_storage: 256GB
     storage_options: [256GB, 512GB, 1TB, 2TB]

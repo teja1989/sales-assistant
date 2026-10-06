@@ -26,7 +26,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from app.config import Settings
-from app.guardrails import check_prices, collect_amounts, truncate_for_model
+from app.guardrails import check_prices, collect_amounts, redact, truncate_for_model
 from app.llm.base import LlmClient, LlmError, TextDelta, ToolCall, TurnComplete
 from app.mcp_gateway import McpGateway, ToolOutcome, ToolSpec
 from app.metrics import Metrics
@@ -133,7 +133,7 @@ class Orchestrator:
             "fallback": outcome.fallback,
             "latency_ms": outcome.latency_ms,
             "is_error": outcome.is_error,
-            "data": outcome.data,
+            "data": redact(outcome.data),
         }
 
     async def _execute(self, session: Session, spec: ToolSpec, args: dict[str, Any]) -> ToolOutcome:

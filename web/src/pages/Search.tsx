@@ -110,7 +110,7 @@ export function Search() {
                   <button
                     type="button"
                     className="btn btn-primary"
-                    onClick={() => navigate(`/chat?ctx=${encodeURIComponent(match.token)}`)}
+                    onClick={() => navigate(`/chat#ctx=${encodeURIComponent(match.token)}`)}
                   >
                     Continue in Lumora Assist
                   </button>

@@ -21,6 +21,13 @@ from app.llm.base import LlmEvent, TextDelta, ToolCall, TurnComplete
 YES = re.compile(
     r"\b(yes|yeah|yep|sure|ok|okay|do it|go ahead|upgrade|sounds good|let'?s do|add it|please do|confirm)\b", re.I
 )
+HUMAN = re.compile(
+    r"\b(human|real person|a person|agent|representative|someone real|speak to someone|talk to someone)\b", re.I
+)
+OFF_TOPIC = re.compile(
+    r"\b(stock|stocks|invest|lawyer|legal advice|medical|doctor|diagnos\w*|election|politic\w*|vote)\b", re.I
+)
+FRUSTRATED = re.compile(r"\b(frustrat\w*|angry|ridiculous|terrible|unacceptable|fed up)\b", re.I)
 NO = re.compile(r"\b(no|nope|not now|later|nah|cancel|don'?t)\b", re.I)
 
 
@@ -85,7 +92,7 @@ class MockLlm:
             calls = [("get_customer_profile", {})]
             if can("get_device_offer"):
                 calls.append(("get_device_offer", {"model": query or last_user}))
-            return "Great question. Let me pull up the details and what you'd personally get for it.", calls
+            return "Happy to help. Let me pull up the details and what you'd personally get for it.", calls
         if "get_customer_profile" not in results and intent == "alert":
             calls = [(t, {}) for t in ("get_customer_profile", "check_service_alerts", "check_area_outage") if can(t)]
             return "Let me check the alerts for your area and your account.", calls
@@ -107,6 +114,9 @@ class MockLlm:
             if data.get("status") == "declined_by_customer":
                 return "No problem, I won't do that. Is there anything else I can help with?", []
             if data.get("error"):
+                detail = str(data["error"])
+                if "catalog" in detail:
+                    return f"I'm sorry, {detail.split(': ', 1)[-1]} I'm happy to share details on any of those.", []
                 return "I couldn't complete that step just now. I can connect you with a specialist if you'd like.", []
             narration = self._narrate_action(tool, data, results)
             if narration is not None:
@@ -126,14 +136,29 @@ class MockLlm:
         elif offers and offers.get("offers"):
             pick = next((o for o in offers["offers"] if o.get("recommended")), None)
 
-        # 3. Follow-up user turns.
+        # 3. Follow-up user turns: human handoff and scope come first.
+        if last["role"] == "user" and HUMAN.search(last_user):
+            return (
+                f"Of course, {name}. I'll connect you with a specialist now, and they'll see everything we've "
+                "covered so you won't need to repeat yourself. Is there anything you'd like me to add for them?"
+            ), []
+        if last["role"] == "user" and OFF_TOPIC.search(last_user):
+            return (
+                "I'm sorry, that's outside what I can help with here. I can help with your internet, mobile "
+                "service, devices and billing. Is there anything along those lines I can do for you?"
+            ), []
+        if last["role"] == "user" and FRUSTRATED.search(last_user) and not pick:
+            return (
+                f"I understand how disruptive this is, {name}, and I'm sorry for the trouble. "
+                "I'm staying with you until it's sorted. Is there anything specific you need right now?"
+            ), []
         if (
             last["role"] == "user"
             and offers is None
             and can("get_eligible_offers")
             and re.search(r"\b(upgrade|faster|more speed|plan)\b", last_user, re.I)
         ):
-            return "Good question. Let me check what you're eligible for.", [("get_eligible_offers", {"need": "speed"})]
+            return "Let me check what you're eligible for.", [("get_eligible_offers", {"need": "speed"})]
         if last["role"] == "user" and any(
             isinstance(r, dict) and r.get("status") == "awaiting_customer_confirmation" for r in results.values()
         ):
@@ -141,11 +166,11 @@ class MockLlm:
         if last["role"] == "user" and pick and not ordered:
             if YES.search(last_user):
                 if can("preview_order"):
-                    return f"Great choice. Here's your order preview for **{pick['name']}**.", [
+                    return f"Thank you. Here's your order preview for **{pick['name']}**.", [
                         ("preview_order", {"offer_id": pick["offer_id"]})
                     ]
                 if can("submit_upgrade_order"):
-                    return f"Great choice. I'll set up **{pick['name']}** for you.", [
+                    return f"Thank you. I'll set up **{pick['name']}** for you.", [
                         ("submit_upgrade_order", {"offer_id": pick["offer_id"]})
                     ]
             if NO.search(last_user):
@@ -282,7 +307,7 @@ class MockLlm:
             if data.get("type") == "device":
                 extra = " Your trade-in kit ships with the phone."
             return (
-                f"All set! Order **{data['order_id']}** for {data['item']} is confirmed. "
+                f"All set. Order **{data['order_id']}** for {data['item']} is confirmed. "
                 f"{data.get('effective', '')}.{price_text}{extra} Anything else I can help with?"
             ), []
         return None
@@ -294,7 +319,7 @@ class MockLlm:
         offer = data["offer"]
         highlights = "\n".join(f"- {h}" for h in device["highlights"][:4])
         text = (
-            f"Hi {name}! Here's the **{device['name']}**. {device['availability']}.\n\n{highlights}\n\n"
+            f"Hi {name}, here's the **{device['name']}**. {device['availability']}.\n\n{highlights}\n\n"
             f"Storage from {device['starting_storage']} to {device['storage_options'][-1]}, in {', '.join(device['colors'])}. "
             f"It starts at **{_money(pricing['full_price'])}**.\n\n"
         )

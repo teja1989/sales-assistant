@@ -53,7 +53,26 @@ def check_prices(text: str, verified: set[str]) -> tuple[str, list[str]]:
 def truncate_for_model(data: dict[str, Any], limit: int = 6000) -> str:
     import json
 
-    text = json.dumps(data, default=str)
+    text = json.dumps(redact(data), default=str)
     if len(text) <= limit:
         return text
     return json.dumps({"truncated": True, "preview": text[:limit]})
+
+
+# Data minimisation: identifiers and contact/identity data never go to the browser or the model.
+# (Matters most for LIVE data, where the real API may return more than the conversation needs.)
+SENSITIVE_KEY = re.compile(
+    r"^(customer_id|account_(id|number|no)|ssn|social_security|tax_id|dob|date_of_birth|birth_?date|"
+    r"email|e_mail|phone|phone_number|mobile_number|msisdn|imei|iccid|address|street|postal_code|zip|"
+    r"card_number|cvv|iban|routing_number|password|secret|token|api_key)$",
+    re.I,
+)
+
+
+def redact(value: Any) -> Any:
+    """Return a copy with sensitive keys removed at any depth."""
+    if isinstance(value, dict):
+        return {k: redact(v) for k, v in value.items() if not SENSITIVE_KEY.match(str(k))}
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    return value

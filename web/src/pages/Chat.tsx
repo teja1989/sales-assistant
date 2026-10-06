@@ -102,7 +102,8 @@ export function Chat({ config }: { config: AppConfig | null }) {
   useEffect(() => {
     if (started.current) return; // StrictMode runs effects twice in dev; the handoff token is single-use.
     started.current = true;
-    const token = new URLSearchParams(window.location.search).get("ctx");
+    // The token rides in the URL fragment, which browsers never send to servers, proxies or access logs.
+    const token = new URLSearchParams(window.location.hash.slice(1)).get("ctx");
     // Drop the token from the address bar and history right away.
     window.history.replaceState({}, "", "/chat");
     if (!token) {

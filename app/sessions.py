@@ -15,6 +15,9 @@ from typing import Any
 
 from app.scenarios import Scenario
 
+# A turn that never finished (client vanished before streaming started) must not lock the session forever.
+BUSY_TIMEOUT_S = 180
+
 
 @dataclass
 class PendingAction:
@@ -42,7 +45,14 @@ class Session:
     created_at: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
     resolved_at: float | None = None
-    busy: bool = False  # one turn at a time per session (single event loop, no lock needed)
+    busy_since: float | None = None  # one turn at a time; stale after BUSY_TIMEOUT_S
+
+    @property
+    def busy(self) -> bool:
+        return self.busy_since is not None and time.time() - self.busy_since < BUSY_TIMEOUT_S
+
+    def mark_busy(self, busy: bool) -> None:
+        self.busy_since = time.time() if busy else None
 
     def customer_id_for(self, source: str) -> str:
         if source == "live" and self.live_customer_id:
@@ -51,9 +61,10 @@ class Session:
 
 
 class SessionStore:
-    def __init__(self, ttl_s: int, max_sessions: int) -> None:
+    def __init__(self, ttl_s: int, max_sessions: int, on_evict: Any = None) -> None:
         self.ttl_s = ttl_s
         self.max_sessions = max_sessions
+        self.on_evict = on_evict  # called with each evicted Session (e.g. to drop its simulated customer)
         self._sessions: dict[str, Session] = {}
         self._lock = threading.Lock()
 
@@ -64,6 +75,8 @@ class SessionStore:
             if len(self._sessions) >= self.max_sessions:
                 oldest = min(self._sessions.values(), key=lambda s: s.last_seen)
                 evicted.append(self._sessions.pop(oldest.id))
+                if self.on_evict:
+                    self.on_evict(oldest)
             session = Session(id=secrets.token_urlsafe(24), **kwargs)
             self._sessions[session.id] = session
             return session, evicted
@@ -75,6 +88,8 @@ class SessionStore:
                 return None
             if time.time() - session.last_seen > self.ttl_s:
                 self._sessions.pop(session_id, None)
+                if self.on_evict:
+                    self.on_evict(session)
                 return None
             session.last_seen = time.time()
             return session
@@ -84,6 +99,8 @@ class SessionStore:
         expired = [s for s in self._sessions.values() if now - s.last_seen > self.ttl_s]
         for s in expired:
             self._sessions.pop(s.id, None)
+            if self.on_evict:
+                self.on_evict(s)
         return expired
 
     def __len__(self) -> int:

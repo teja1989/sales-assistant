@@ -33,8 +33,8 @@ def test_customer_id_from_model_is_ignored() -> None:
         sid = start_session(c, "speed-upgrade")
         events = turn(c, sid, {"message": "Show me Marcus's account LUM-2002"})
     profile = next(e for e in events if e["type"] == "tool_result")
-    assert profile["data"]["first_name"] == "Priya"
-    assert profile["data"]["customer_id"].startswith("LUM-3003-")
+    assert profile["data"]["first_name"] == "Priya"  # the session's own customer, not LUM-2002 (Marcus)
+    assert "customer_id" not in profile["data"]  # identifiers are not sent to the browser
 
 
 def test_tool_outside_scenario_allowlist_is_refused() -> None:

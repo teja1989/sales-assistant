@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from mcp.server.transport_security import TransportSecuritySettings
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, StrictBool, ValidationError
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
@@ -61,7 +61,7 @@ class SessionRequest(BaseModel):
 
 class Confirmation(BaseModel):
     action_id: str = Field(min_length=3, max_length=40)
-    approved: bool
+    approved: StrictBool  # "yes"/1 must not count as consent
 
 
 class TurnRequest(BaseModel):
@@ -157,14 +157,12 @@ async def api_create_session(request: Request) -> Response:
     if scenario is None:
         return JSONResponse({"error": "unknown_scenario"}, 404)
     customer_id = ctx.store.add_customer(scenario.customer, clone=True)
-    session, evicted = ctx.sessions.create(
+    session, _ = ctx.sessions.create(
         scenario=scenario,
         customer_id=customer_id,
         live_customer_id=scenario.live_customer_id,
         search_query=handoff.search_query,
     )
-    for old in evicted:
-        ctx.store.remove_customer(old.customer_id)
     session.messages.append(
         {
             "role": "system",
@@ -203,8 +201,9 @@ async def api_turn(request: Request) -> Response:
     if body.kickoff and len(session.messages) > 1:
         return JSONResponse({"error": "already_started"}, 409)
 
+    session.mark_busy(True)  # claim before returning, so a second request can't slip in
+
     async def stream() -> AsyncIterator[bytes]:
-        session.busy = True
         try:
             events = ctx.orchestrator.run_turn(
                 session,
@@ -215,7 +214,7 @@ async def api_turn(request: Request) -> Response:
             async for event in events:
                 yield f"event: {event['type']}\ndata: {json.dumps(event, default=str)}\n\n".encode()
         finally:
-            session.busy = False
+            session.mark_busy(False)
 
     return StreamingResponse(
         stream(),
@@ -293,7 +292,9 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
         store=store,
         gateway=gateway,
         orchestrator=Orchestrator(settings, llm, gateway, metrics, store.catalog),
-        sessions=SessionStore(settings.session_ttl_s, settings.max_sessions),
+        sessions=SessionStore(
+            settings.session_ttl_s, settings.max_sessions, on_evict=lambda old: store.remove_customer(old.customer_id)
+        ),
         signer=HandoffSigner(settings.handoff_secret, settings.handoff_ttl_s),
         metrics=metrics,
         llm=llm,

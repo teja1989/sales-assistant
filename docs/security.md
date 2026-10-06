@@ -18,6 +18,12 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 | Unauthenticated MCP access | `/mcp` requires `Authorization: Bearer MCP_SERVER_TOKEN` (constant-time compare); optional Host allowlist (DNS-rebinding protection) | `security.BearerTokenMiddleware`, `MCP_ALLOWED_HOSTS` |
 | Handoff link replay or forgery | HS256 JWT, pinned algorithm, `aud`/`iss`/`exp`/`jti` required, 5-minute TTL, single use; no customer data in the URL; removed from the address bar on load | `handoff.py`, `Chat.tsx` |
 | XSS from model output | UI renders markdown into React elements, never `innerHTML`; strict CSP (`script-src 'self'`, `frame-ancestors 'none'`) | `markdown.tsx`, `security.py` |
+| Secrets in access logs | Session ids and handoff tokens are masked in uvicorn access logs and app logs | `logging_setup.AccessLogFilter`, `mask_path` |
+| Handoff token in proxy/router logs | Token travels in the URL fragment (`/chat#ctx=`), which browsers never send to servers | `Search.tsx`, `Chat.tsx` |
+| Over-sharing customer data | Identifiers and contact/identity fields are stripped from tool results before they reach the browser or the model | `guardrails.redact` |
+| Ambiguous consent | Confirmations require a strict boolean; `"yes"` or `1` is rejected | `main.Confirmation` |
+| Stuck or concurrent turns | One turn per session; a turn lock expires after 3 minutes; expired sessions release their simulated data | `sessions.py` |
+| Wrong device quoted | Device lookup refuses other variants or generations (e.g. Pro Max, iPhone 17) and flags unpriced storage | `sim._find_device`, `sim.device_offer` |
 | Abuse / large payloads | Per-IP rate limit on `/api` POSTs; 32 KB body limit; 2,000-char messages | `security.py`, `main.py` |
 | Secrets in source or logs | Secrets from env or a CF user-provided service; `.env` git- and cf-ignored; app refuses to start outside `local` without 32+ char secrets; logs mask emails, phones, card numbers, bearer tokens and API keys | `config.py`, `logging_setup.py` |
 | Leaking internals in errors | Browser gets generic messages; provider errors are summarised without keys | `orchestrator.run_turn`, `openai_chat._safe_error` |
