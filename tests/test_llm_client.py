@@ -114,7 +114,9 @@ async def test_sdk_request_and_stream_parsing() -> None:
     call = sdk.calls[0]
     assert call["model"] == "gpt-41"  # Azure: the deployment name
     assert call["stream"] is True and call["tools"] == [tool] and call["tool_choice"] == "auto"
-    assert call["max_tokens"] == 700 and call["temperature"] == 0.2
+    # Reasoning-model defaults: no temperature, max_completion_tokens with headroom, no reasoning_effort
+    assert call["max_completion_tokens"] == 4000
+    assert "temperature" not in call and "max_tokens" not in call and "reasoning_effort" not in call
     assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "Checking now."
     done = events[-1]
     assert isinstance(done, TurnComplete) and done.finish_reason == "tool_calls"
@@ -202,3 +204,25 @@ def test_missing_sdk_gives_a_clear_error(monkeypatch) -> None:
     monkeypatch.setattr(builtins, "__import__", no_openai)
     with pytest.raises(ConfigError, match="pip install"):
         AzureOpenAIClient(make_settings(**AZURE))
+
+
+@pytest.mark.anyio
+async def test_optional_temperature_effort_and_token_param() -> None:
+    sdk = FakeSdk([{"choices": [{"index": 0, "delta": {"content": "OK"}, "finish_reason": "stop"}]}])
+    settings = make_settings(
+        **AZURE,
+        LLM_TEMPERATURE="0.2",
+        LLM_REASONING_EFFORT="Low",
+        LLM_MAX_TOKENS="700",
+        LLM_MAX_TOKENS_PARAM="max_tokens",
+    )
+    await collect(AzureOpenAIClient(settings, client=sdk))
+    call = sdk.calls[0]
+    assert call["temperature"] == 0.2 and call["reasoning_effort"] == "low" and call["max_tokens"] == 700
+
+
+@pytest.mark.anyio
+async def test_token_limit_hit_before_any_answer_is_a_clear_error() -> None:
+    sdk = FakeSdk([{"choices": [{"index": 0, "delta": {}, "finish_reason": "length"}]}])
+    with pytest.raises(LlmError, match="raise LLM_MAX_TOKENS"):
+        await collect(AzureOpenAIClient(make_settings(**AZURE), client=sdk))

@@ -45,9 +45,12 @@ class AzureOpenAIClient:
             "model": self.settings.azure_openai_deployment,  # Azure: the deployment name
             "messages": messages,
             "stream": True,
-            "temperature": self.settings.llm_temperature,
             self.settings.llm_max_tokens_param: self.settings.llm_max_tokens,
         }
+        if self.settings.llm_temperature is not None:  # reasoning models reject anything but the default
+            request["temperature"] = self.settings.llm_temperature
+        if self.settings.llm_reasoning_effort:
+            request["reasoning_effort"] = self.settings.llm_reasoning_effort
         if tools:
             request["tools"] = tools
             request["tool_choice"] = "auto"
@@ -78,6 +81,7 @@ class _Accumulator:
 
     def __init__(self) -> None:
         self.calls: dict[int, dict[str, str]] = {}
+        self.text_seen = False
         self.finish_reason: str | None = None
         self.usage: dict[str, Any] | None = None
 
@@ -88,6 +92,7 @@ class _Accumulator:
         for choice in chunk.get("choices") or []:  # Azure sends filter-only chunks with no choices
             delta = choice.get("delta") or {}
             if delta.get("content"):
+                self.text_seen = True
                 events.append(TextDelta(delta["content"]))
             for tc in delta.get("tool_calls") or []:
                 slot = self.calls.setdefault(tc.get("index", 0), {"id": "", "name": "", "arguments": ""})
@@ -110,6 +115,9 @@ class _Accumulator:
             for i, slot in sorted(self.calls.items())
             if slot["name"]
         ]
+        if self.finish_reason == "length" and not self.text_seen and not tool_calls:
+            # Reasoning models spend hidden tokens first; a low limit can leave nothing for the answer.
+            raise LlmError("Model hit LLM_MAX_TOKENS before answering; raise LLM_MAX_TOKENS", status=400)
         return TurnComplete(tool_calls=tool_calls, finish_reason=self.finish_reason, usage=self.usage)
 
 

@@ -35,7 +35,10 @@ You shouldn't need these for the demo. All have defaults.
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `LLM_TIMEOUT_S`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`, `LLM_MAX_TOKENS_PARAM` | 60, 0.2, 700, `max_tokens` | Model request tuning (`max_completion_tokens` for reasoning models) |
+| `LLM_TEMPERATURE` | not sent | Reasoning models (GPT-5 family) only accept the default; set it (e.g. `0.2`) only for older models like gpt-4.1 |
+| `LLM_REASONING_EFFORT` | not sent | `low` / `medium` / `high` for reasoning models; `low` gives faster chat replies |
+| `LLM_MAX_TOKENS`, `LLM_MAX_TOKENS_PARAM` | 4000, `max_completion_tokens` | Includes hidden reasoning tokens, so keep it generous. Use `max_tokens` only for old models/API versions that reject `max_completion_tokens` |
+| `LLM_TIMEOUT_S` | 60 | Request timeout |
 | `LIVE_TOOL_MAP` | empty | Rename tools for the live server: `ours=theirs,ours2=theirs2` |
 | `LIVE_MCP_TIMEOUT_S` | 20 | Live call timeout |
 | `MCP_AUTH_REQUIRED`, `MCP_SERVER_TOKEN` | false, empty | Require `Authorization: Bearer <token>` on our own `/mcp` (32+ chars outside local). Turn on before exposing `/mcp` |

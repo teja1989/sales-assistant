@@ -143,9 +143,13 @@ class Settings:
     azure_openai_api_key: str = ""
     azure_openai_deployment: str = ""
     azure_openai_api_version: str = "2024-10-21"
-    llm_temperature: float = 0.2
-    llm_max_tokens: int = 700
-    llm_max_tokens_param: str = "max_tokens"
+    # Defaults suit reasoning models (GPT-5 family): no temperature (they only accept the default),
+    # max_completion_tokens with room for hidden reasoning tokens. LLM_TEMPERATURE / LLM_REASONING_EFFORT
+    # are sent only when set.
+    llm_temperature: float | None = None
+    llm_reasoning_effort: str = ""  # e.g. low | medium | high (faster replies with "low")
+    llm_max_tokens: int = 4000
+    llm_max_tokens_param: str = "max_completion_tokens"
     llm_timeout_s: float = 60.0
     mock_stream_delay_ms: int = 12
 
@@ -228,9 +232,10 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         azure_openai_api_key=(get("AZURE_OPENAI_API_KEY") or "").strip(),
         azure_openai_deployment=(get("AZURE_OPENAI_DEPLOYMENT") or "").strip(),
         azure_openai_api_version=(get("AZURE_OPENAI_API_VERSION") or "2024-10-21").strip(),
-        llm_temperature=_float(get("LLM_TEMPERATURE"), 0.2),
-        llm_max_tokens=_int(get("LLM_MAX_TOKENS"), 700),
-        llm_max_tokens_param=get("LLM_MAX_TOKENS_PARAM") or "max_tokens",
+        llm_temperature=_float(get("LLM_TEMPERATURE"), 0.0) if get("LLM_TEMPERATURE") else None,
+        llm_reasoning_effort=(get("LLM_REASONING_EFFORT") or "").strip().lower(),
+        llm_max_tokens=_int(get("LLM_MAX_TOKENS"), 4000),
+        llm_max_tokens_param=(get("LLM_MAX_TOKENS_PARAM") or "max_completion_tokens").strip(),
         llm_timeout_s=_float(get("LLM_TIMEOUT_S"), 60.0),
         mock_stream_delay_ms=_int(get("MOCK_STREAM_DELAY_MS"), 12),
         mcp_auth_required=mcp_auth,
