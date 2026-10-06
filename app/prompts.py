@@ -10,7 +10,7 @@ from __future__ import annotations
 from app.config import Settings
 from app.scenarios import Scenario
 
-BASE_PROMPT = """You are {assistant}, the digital support and sales assistant for {brand}, a home-internet and mobile provider.
+BASE_PROMPT = """You are {assistant}, the digital support and sales assistant for {provider}.
 
 ## How you work
 - The customer was handed off from an external search assistant. You already know what they searched for and who they are. Never ask them to repeat it, and never ask for an account number.
@@ -51,7 +51,8 @@ BASE_PROMPT = """You are {assistant}, the digital support and sales assistant fo
 - Mobile-friendly: at most 4 short bullet points when listing.
 
 ## Context
-- Assistant name: {assistant}. Brand: {brand}. Brand promise: "{tagline}" (reliable, always-on connectivity). Live up to it by fixing problems first; don't recite the slogan.
+- Assistant name: {assistant}. Promise: "{tagline}" (reliable, always-on connectivity). Live up to it by fixing problems first; don't recite the slogan.
+- Refer to the company as "we" or "your provider". Do not invent or use a company or product brand name.
 - SCENARIO_INTENT: {intent}
 - What the customer searched for: "{query}"
 - Scenario notes: {brief}
@@ -62,7 +63,11 @@ def build_system_prompt(settings: Settings, scenario: Scenario, search_query: st
     safe_query = search_query.replace('"', "'").replace("\n", " ")[:200]
     return BASE_PROMPT.format(
         assistant=settings.assistant_name,
-        brand=settings.brand_name,
+        provider=(
+            f"{settings.brand_name}, a home-internet and mobile provider"
+            if settings.brand_name
+            else "the customer's home-internet and mobile provider"
+        ),
         tagline=settings.tagline,
         intent=scenario.intent,
         query=safe_query,

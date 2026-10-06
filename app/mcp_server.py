@@ -1,4 +1,4 @@
-"""The MCP server: Tidelink's account, network and order tools.
+"""The MCP server: account, network and order tools for the provider.
 
 This is the same server whether it is reached:
 * in-process by the chat orchestrator (direct MCP dispatch, no HTTP hop), or
@@ -27,10 +27,10 @@ READ = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 ACTION = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 
 
-def build_mcp_server(store: SimStore, name: str = "tidelink-network") -> MCPServer:
+def build_mcp_server(store: SimStore, name: str = "provider-network") -> MCPServer:
     server = MCPServer(
         name,
-        title="Tidelink account and network tools",
+        title="Account and network tools",
         instructions=(
             "Tools for an internet and mobile provider: customer profile, outage and weather "
             "alerts, line diagnostics, usage, plan/equipment/device offers, order preview and actions "

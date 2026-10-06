@@ -50,7 +50,7 @@ Optional fixture blocks for mobile flows:
 
 ```yaml
 mobile:                       # null = no mobile service (an 800+ upgrade adds a free line)
-  plan: Tidelink Unlimited
+  plan: Unlimited
   lines:
     - {line_id: LN-1, device: iPhone 15 Pro, device_condition: good}   # first line is the trade-in device
 weather_alert:                # makes check_service_alerts return a storm and enables the storm data pass

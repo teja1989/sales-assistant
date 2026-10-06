@@ -1,4 +1,4 @@
-# Simulated product catalog for the fictional provider "Tidelink".
+# Simulated product catalog for an unnamed internet and mobile provider.
 # Prices, promos, trade-in values and financing are demo values only.
 # The assistant may only quote prices returned by tools, and tools read them from this file.
 
@@ -39,9 +39,9 @@ bundle_promos:
   mobile_free_year:
     min_download_mbps: 800
     months: 12
-    line_name: Tidelink Unlimited line
+    line_name: Unlimited mobile line
     worth_monthly_price: 30.00
-    description: "1 Tidelink Unlimited mobile line free for 12 months"
+    description: "1 Unlimited mobile line free for 12 months"
 
 mobile:
   unlimited_line_price: 30.00
@@ -49,7 +49,7 @@ mobile:
 
 equipment:
   - id: mesh-pod
-    name: Tidelink Mesh Pod
+    name: Mesh Wi-Fi Pod
     description: "Extends whole-home Wi-Fi to weak rooms. Ships free, self-install in about 10 minutes."
     monthly_price: 7.00
 

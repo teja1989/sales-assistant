@@ -135,3 +135,9 @@ def test_off_topic_is_declined_politely(client) -> None:
     events = turn(client, sid, {"message": "Which stocks should I buy?"})
     text = " ".join(e["text"] for e in events if e["type"] == "segment_end")
     assert "outside what I can help with" in text
+
+
+def test_company_brand_stays_out_of_products_and_data() -> None:
+    """Tidelink is the assistant's name only; products and customer data stay unbranded."""
+    for path in [ROOT_DIR / "data" / "catalog.yaml", *sorted((ROOT_DIR / "scenarios").glob("*.yaml"))]:
+        assert "Tidelink" not in path.read_text(), path.name

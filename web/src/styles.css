@@ -1,4 +1,4 @@
-/* Tidelink Assist: cool "signal" palette, system faces only (no external font requests). */
+/* Tidelink: cool "signal" palette, system faces only (no external font requests). */
 :root {
   --mist: #eef2f6;
   --paper: #ffffff;
@@ -393,6 +393,10 @@ a {
   background: var(--teal-wash);
   border-radius: var(--r-md);
   padding: 16px;
+}
+
+.handoff-card .btn {
+  white-space: nowrap;
 }
 
 .handoff-card p {

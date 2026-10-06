@@ -13,7 +13,7 @@ export function Home({ config }: { config: AppConfig | null }) {
   return (
     <div className="page home">
       <header className="topbar">
-        <BrandMark name={config?.app_name ?? "Tidelink Assist"} tagline={config?.tagline} />
+        <BrandMark name={config?.app_name ?? "Tidelink"} tagline={config?.tagline} />
         <nav>
           <Link to="/search">Search handoff</Link>
           <Link to="/dashboard">Impact</Link>
@@ -27,7 +27,7 @@ export function Home({ config }: { config: AppConfig | null }) {
             Reliable home internet and mobile that keeps you connected, every hour of every day.
           </p>
           <p className="lede">
-            Customers arrive from a search assistant with their question already known. {config?.assistant_name ?? "Tide"} checks
+            Customers arrive from a search assistant with their question already known. {config?.assistant_name ?? "Tidelink"} checks
             the account, outage map and line health through MCP tools, fixes what it can, and recommends an upgrade only
             when the data says the customer is outgrowing their plan.
           </p>

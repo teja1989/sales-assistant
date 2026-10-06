@@ -124,9 +124,9 @@ def _mapping(value: str | None) -> dict[str, str]:
 @dataclass(frozen=True)
 class Settings:
     app_env: Literal["local", "dev", "prod", "test"] = "local"
-    app_name: str = "Tidelink Assist"
-    assistant_name: str = "Tide"
-    brand_name: str = "Tidelink"
+    app_name: str = "Tidelink"
+    assistant_name: str = "Tidelink"
+    brand_name: str = ""  # optional company name; empty keeps the provider unnamed
     tagline: str = "Always on, like the tide."
     log_level: str = "INFO"
 
@@ -230,9 +230,9 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
 
     settings = Settings(
         app_env=app_env,  # type: ignore[arg-type]
-        app_name=get("APP_NAME") or "Tidelink Assist",
-        assistant_name=get("ASSISTANT_NAME") or "Tide",
-        brand_name=get("BRAND_NAME") or "Tidelink",
+        app_name=get("APP_NAME") or "Tidelink",
+        assistant_name=get("ASSISTANT_NAME") or "Tidelink",
+        brand_name=get("BRAND_NAME") or "",
         tagline=get("TAGLINE") or "Always on, like the tide.",
         log_level=(get("LOG_LEVEL") or "INFO").upper(),
         llm_provider=provider,  # type: ignore[arg-type]

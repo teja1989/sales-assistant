@@ -36,7 +36,7 @@ customer:
     expected_impact: "Damaging winds; power and network interruptions possible"
     source: "Simulated weather feed"
   mobile:
-    plan: Tidelink Unlimited
+    plan: Unlimited
     lines:
       - {line_id: LN-7A01, device: iPhone 15 Pro, device_condition: good}
       - {line_id: LN-7A02, device: iPhone 14 Pro, device_condition: good}

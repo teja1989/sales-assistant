@@ -1,8 +1,8 @@
-# Tidelink Assist
+# Tidelink
 
 A working prototype of an **MCP-connected chat assistant** for a home-internet and mobile provider. A customer searches in an external AI assistant, lands in our chat with their question already known, and the assistant uses MCP tools to **fix the problem first, then recommend an upgrade only when the data supports it**.
 
-"Tidelink" is a fictional brand. All customer, network, pricing, trade-in and weather data is simulated unless you connect a live MCP server. iPhone 18 Pro facts (starting price, storage, chip, camera, battery, colors, availability) come from Apple's September 2026 announcement.
+**Tidelink** is the name of the chat assistant; the provider itself stays unnamed and products use generic names. All customer, network, pricing, trade-in and weather data is simulated unless you connect a live MCP server. iPhone 18 Pro facts (starting price, storage, chip, camera, battery, colors, availability) come from Apple's September 2026 announcement.
 
 ## What it shows
 
@@ -42,7 +42,7 @@ AZURE_OPENAI_DEPLOYMENT=gpt-4.1
 
 Then `make dev` (auto-reload for Python and the UI) or `make run`.
 
-Demo path: **Home → Start from a search → pick an example → Continue in Tidelink Assist**, then open **Impact** in another tab.
+Demo path: **Home → Start from a search → pick an example → Continue with Tidelink**, then open **Impact** in another tab.
 
 ## Make targets
 

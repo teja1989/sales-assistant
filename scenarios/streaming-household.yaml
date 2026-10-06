@@ -36,7 +36,7 @@ customer:
   outage: null
   fault: null
   mobile:
-    plan: Tidelink Unlimited
+    plan: Unlimited
     lines:
       - {line_id: LN-6A01, device: iPhone 16, device_condition: good}
       - {line_id: LN-6A02, device: iPhone 15, device_condition: good}
