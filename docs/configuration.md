@@ -4,7 +4,7 @@ Same settings locally and on Cloud Foundry. The only difference is the network p
 
 | | Local | Cloud Foundry |
 |---|---|---|
-| Where settings live | `.env` (`make env` creates it) | user-provided service `sales-assistant-secrets` (`make cf-secrets` copies them from `.env`) |
+| Where settings live | `.env` (`make env` creates it) | app env vars: `cf set-env sales-assistant <NAME> <value>` |
 | Path to Azure OpenAI | direct | through your **proxy service**, bound to the app; it sets `HTTPS_PROXY`, which the SDK uses automatically |
 | Check | `make llm-check` | `cf ssh`, then `python -m app.llm_check` (see deployment doc) |
 

@@ -29,7 +29,7 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 | Stuck or concurrent turns | One turn per session; a turn lock expires after 3 minutes; expired sessions release their simulated data | `sessions.py` |
 | Wrong device quoted | Device lookup refuses other variants or generations (e.g. Pro Max, iPhone 17) and flags unpriced storage | `sim._find_device`, `sim.device_offer` |
 | Abuse / large payloads | Per-IP rate limit on `/api` POSTs; 32 KB body limit; 2,000-char messages | `security.py`, `main.py` |
-| Secrets in source or logs | Secrets from env or a CF user-provided service; `.env` git- and cf-ignored; signing secrets are random per process (never configured or stored); `/mcp` auth refuses a short token outside `local`; logs mask emails, phones, card numbers, bearer tokens and API keys | `config.py`, `logging_setup.py` |
+| Secrets in source or logs | Secrets from env vars (`cf set-env` on CF, never the manifest); `.env` git- and cf-ignored; signing secrets are random per process (never configured or stored); `/mcp` auth refuses a short token outside `local`; logs mask emails, phones, card numbers, bearer tokens and API keys | `config.py`, `logging_setup.py` |
 | Leaking internals in errors | Browser gets generic messages; provider errors are summarised without keys | `orchestrator.run_turn`, `openai_chat._safe_error` |
 
 ## Known gaps (accepted for a prototype)
@@ -45,6 +45,6 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 ## Before going beyond a demo
 
 1. Put the app behind corporate SSO (CF route service) or set `DEMO_BASIC_AUTH_*`.
-2. Turn `/mcp` auth on (`MCP_AUTH_REQUIRED=true`) with a 32+ char `MCP_SERVER_TOKEN`, stored only in the user-provided service.
+2. Turn `/mcp` auth on (`MCP_AUTH_REQUIRED=true`) with a 32+ char `MCP_SERVER_TOKEN` set via `cf set-env`, never in the manifest.
 3. With `LIVE_MCP_URL` set, actions go live too: use test accounts in `live_customer_id`, or keep action tools off the live server.
 4. Review the model proxy's and Azure OpenAI's content filters and data-retention settings for customer data.

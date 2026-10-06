@@ -6,13 +6,22 @@ The app is a single Python process (uvicorn) that serves the UI, the chat API an
 
 ```bash
 cf login -a <api> -o <org> -s <space>
-make env          # if you don't have a .env yet
-# edit .env: the AZURE_OPENAI_* values, and LIVE_MCP_URL (+ LIVE_MCP_TOKEN) if used
-make llm-check    # locally: confirms Azure answers and can call tools
-make cf-secrets   # creates the user-provided service "sales-assistant-secrets" from .env
+make llm-check    # optional: confirm the same Azure values work locally first
+
+# Create the app without starting it, then set its values (they survive later pushes)
+cf push sales-assistant --no-start -f manifest.yml
+cf set-env sales-assistant AZURE_OPENAI_ENDPOINT    https://<resource>.openai.azure.com
+cf set-env sales-assistant AZURE_OPENAI_API_KEY     <key>
+cf set-env sales-assistant AZURE_OPENAI_DEPLOYMENT  gpt-4.1
+cf set-env sales-assistant AZURE_OPENAI_API_VERSION 2024-10-21
+# optional live data:
+cf set-env sales-assistant LIVE_MCP_URL   https://<api-host>/mcp
+cf set-env sales-assistant LIVE_MCP_TOKEN <token>
+
+cf bind-service sales-assistant <your-proxy-service>   # sets HTTPS_PROXY for Azure calls
 ```
 
-`make cf-secrets` stores the Azure and live MCP values (plus `MCP_SERVER_TOKEN` and `LIVE_TOOL_MAP` if you set them; see `KEYS` in `scripts/cf-secrets.sh`) and passes them through a temporary 0600 file, not the command line. Signing secrets are generated at startup, so there's nothing else to store.
+Keep these values out of `manifest.yml` (it's in git). Values set with `cf set-env` are kept across `cf push`; values in the manifest's `env:` would override them. Note that anyone with developer access to the space can read them with `cf env`.
 
 ## Every deploy
 
@@ -23,13 +32,13 @@ BASE_URL=https://<route> make smoke
 
 The Python buildpack doesn't run npm, which is why the UI is built locally first. `.cfignore` excludes `web/`, tests, docs and `.env` from the upload.
 
+To change a value: `cf set-env sales-assistant <NAME> <value>`, then `cf restage sales-assistant`.
+
 ## Configuration
 
-- **Secrets and endpoints:** user-provided service credentials. The app reads `VCAP_SERVICES` and treats each credential key as an environment variable (keys are upper-cased).
-- **Non-secret settings:** `env:` in `manifest.yml`, or `cf set-env`.
-- Precedence: real environment variables, then the service credentials, then `.env`.
-
-To change a secret: edit `.env`, `make cf-secrets`, then `cf restage sales-assistant`.
+- **Azure, live MCP and other settings:** app env vars (`cf set-env`). Non-secret defaults are under `env:` in `manifest.yml`.
+- **Proxy:** comes from the bound proxy service (`HTTPS_PROXY`); no app setting.
+- Precedence: env vars, then credentials of a bound user-provided service named `sales-assistant-secrets` (optional, if you prefer that route), then `.env` (local only; not uploaded).
 
 ## Why these manifest settings
 
@@ -72,7 +81,7 @@ It prints the endpoint, deployment, the proxy in effect (it should say `HTTPS_PR
 
 ## Exposing `/mcp` to other MCP clients
 
-`/mcp` is on the same route. **Auth is currently off** (`MCP_AUTH_REQUIRED: "false"` in `manifest.yml`), so any MCP client that can reach the route can connect without a header; requests are rate limited per IP. To turn it on: set `MCP_AUTH_REQUIRED: "true"`, put a 32+ char `MCP_SERVER_TOKEN` in `.env`, `make cf-secrets`, `cf push`. Clients then send `Authorization: Bearer <MCP_SERVER_TOKEN>`. Set `MCP_ALLOWED_HOSTS=<your-route-host>` to turn on Host-header validation. A consumer assistant such as Muse can only reach it if the route is publicly reachable; that needs your security team's approval.
+`/mcp` is on the same route. **Auth is currently off** (`MCP_AUTH_REQUIRED: "false"` in `manifest.yml`), so any MCP client that can reach the route can connect without a header; requests are rate limited per IP. To turn it on: set `MCP_AUTH_REQUIRED: "true"`, `cf set-env sales-assistant MCP_SERVER_TOKEN <32+ chars>`, `cf push`. Clients then send `Authorization: Bearer <MCP_SERVER_TOKEN>`. Set `MCP_ALLOWED_HOSTS=<your-route-host>` to turn on Host-header validation. A consumer assistant such as Muse can only reach it if the route is publicly reachable; that needs your security team's approval.
 
 ## Troubleshooting
 

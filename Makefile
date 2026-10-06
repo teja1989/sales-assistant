@@ -8,7 +8,7 @@ APP   ?= sales-assistant
 
 .DEFAULT_GOAL := help
 .PHONY: help setup venv web-install env dev run run-mock build-web test lint fmt typecheck-web check \
-        llm-check smoke mcp-inspect cf-secrets cf-push cf-logs clean
+        llm-check smoke mcp-inspect cf-push cf-logs clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-15s\033[0m %s\n",$$1,$$2}'
@@ -74,9 +74,6 @@ mcp-inspect: ## Open MCP Inspector; connect to http://localhost:8000/mcp
 	npx @modelcontextprotocol/inspector
 
 # ------------------------------------------------------------ cloud foundry
-cf-secrets: ## Create/update the CF user-provided service with secrets from .env
-	@bash scripts/cf-secrets.sh
-
 cf-push: build-web ## Build the UI and cf push
 	cf push -f manifest.yml
 

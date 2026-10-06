@@ -62,7 +62,7 @@ Demo path: **Home → Start from a search → pick an example → Continue with 
 | `make check` | Everything CI runs |
 | `make smoke` | End-to-end smoke test of a running app (`BASE_URL=...` for CF) |
 | `make mcp-inspect` | Open MCP Inspector against `/mcp` |
-| `make cf-secrets` / `make cf-push` | Store secrets in a CF user-provided service / build and push |
+| `make cf-push` | Build the UI and `cf push` (set Azure values once with `cf set-env`; see deployment doc) |
 
 ## How it fits together
 
