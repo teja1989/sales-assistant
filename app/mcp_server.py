@@ -85,14 +85,17 @@ def build_mcp_server(store: SimStore, name: str = "provider-network") -> MCPServ
         title="Get eligible offers",
         description=(
             "Offers the customer is eligible for right now, with exact prices. need='speed' for plan "
-            "upgrades, need='wifi' for whole-home Wi-Fi equipment. Returns blocked=true while a service "
-            "issue is open; never offer anything in that case."
+            "upgrades, need='wifi' for whole-home Wi-Fi equipment, need='save' for cheaper plans that still "
+            "fit their usage. Returns blocked=true while a service issue is open; never offer anything then."
         ),
         annotations=READ,
     )
     def get_eligible_offers(
         customer_id: CustomerId,
-        need: Annotated[Literal["speed", "wifi"], Field(description="What the customer needs.")] = "speed",
+        need: Annotated[
+            Literal["speed", "wifi", "save"],
+            Field(description="speed = faster plans, wifi = Wi-Fi equipment, save = cheaper plans that still fit."),
+        ] = "speed",
     ) -> dict[str, Any]:
         return run(store.offers, customer_id, need)
 
@@ -147,6 +150,44 @@ def build_mcp_server(store: SimStore, name: str = "provider-network") -> MCPServ
     )
     def activate_storm_data_pass(customer_id: CustomerId) -> dict[str, Any]:
         return run(store.activate_storm_pass, customer_id)
+
+    @server.tool(
+        title="Account checkup",
+        description=(
+            "Proactive review of the customer's account: what's good and what needs attention across billing, "
+            "service health, plan fit and mobile, each with severity, money impact and the tool that fixes it."
+        ),
+        annotations=READ,
+    )
+    def get_account_checkup(customer_id: CustomerId) -> dict[str, Any]:
+        return run(store.account_checkup, customer_id)
+
+    @server.tool(
+        title="Turn on autopay",
+        description="Enroll in autopay and paperless billing using the saved payment method. Requires confirmation.",
+        annotations=ACTION,
+    )
+    def enroll_autopay(customer_id: CustomerId) -> dict[str, Any]:
+        return run(store.enroll_autopay, customer_id)
+
+    @server.tool(
+        title="Return unused equipment",
+        description="Start a return for rented equipment the customer no longer uses. Requires confirmation.",
+        annotations=ACTION,
+    )
+    def return_unused_equipment(
+        customer_id: CustomerId,
+        item_id: Annotated[str, Field(description="Equipment id from the account checkup.", max_length=40)],
+    ) -> dict[str, Any]:
+        return run(store.return_unused_equipment, customer_id, item_id)
+
+    @server.tool(
+        title="Update gateway software",
+        description="Schedule the latest gateway firmware for overnight install. Requires confirmation.",
+        annotations=ACTION,
+    )
+    def update_gateway_firmware(customer_id: CustomerId) -> dict[str, Any]:
+        return run(store.update_gateway_firmware, customer_id)
 
     @server.tool(
         title="Reboot gateway",

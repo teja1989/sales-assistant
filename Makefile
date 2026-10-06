@@ -30,8 +30,10 @@ env: ## Create .env from .env.example with freshly generated secrets (never over
 	  cp .env.example .env; \
 	  MCP=$$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))'); \
 	  HOS=$$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))'); \
-	  sed -i.bak -e "s|^MCP_SERVER_TOKEN=.*|MCP_SERVER_TOKEN=$$MCP|" -e "s|^HANDOFF_SECRET=.*|HANDOFF_SECRET=$$HOS|" .env; \
-	  rm -f .env.bak; echo "Created .env with generated MCP_SERVER_TOKEN and HANDOFF_SECRET"; fi
+	  OAS=$$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))'); \
+	  sed -i.bak -e "s|^MCP_SERVER_TOKEN=.*|MCP_SERVER_TOKEN=$$MCP|" -e "s|^HANDOFF_SECRET=.*|HANDOFF_SECRET=$$HOS|" \
+	    -e "s|^OAUTH_SIGNING_SECRET=.*|OAUTH_SIGNING_SECRET=$$OAS|" .env; \
+	  rm -f .env.bak; echo "Created .env with generated MCP_SERVER_TOKEN, HANDOFF_SECRET and OAUTH_SIGNING_SECRET"; fi
 
 # ------------------------------------------------------------------ run
 dev: ## Run API with auto-reload + rebuild UI on change (http://localhost:8000)

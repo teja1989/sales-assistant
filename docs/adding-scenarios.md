@@ -18,7 +18,7 @@ A scenario is one YAML file in `scenarios/`. No code changes. It is loaded at st
 |---|---|
 | `id` | Unique slug |
 | `title`, `description` | Shown in the UI |
-| `intent` | `connectivity`, `speed`, `wifi`, `device`, `alert` or `general`; goes into the system prompt and steers the first tools called |
+| `intent` | `connectivity`, `speed`, `wifi`, `device`, `alert`, `account` or `general`; goes into the system prompt and steers the first tools called |
 | `search_query` | Example search; shown as a chip on the search page |
 | `match_keywords` | Words/phrases that route a typed search to this scenario (phrases score higher) |
 | `assistant_brief` | Extra guidance appended to the system prompt |
@@ -46,6 +46,20 @@ Offers are blocked while the verdict is `area_outage`, `gateway_fault` or `signa
 
 `plan_id` must exist in `data/catalog.yaml`. Plans of 800 Mbps or faster carry the free-mobile-year bundle (`bundle_promos` in the catalog).
 
+Optional `billing` and rented-equipment blocks drive the account checkup:
+
+```yaml
+billing:
+  autopay: false               # "Autopay and paperless are off" (fix: enroll_autopay)
+  last_payment_status: ok      # "failed" adds a high-severity item
+  card_expires_in_days: 40     # within 60 days adds a reminder
+  promo: {name: Welcome offer, ends_in_days: 9, current_monthly_price: 70.00, after_promo_price: 85.00}
+equipment:
+  firmware: "6.2.1"            # older than firmware_latest in the catalog adds "Gateway update available"
+  rented:
+    - {id: tv-box-legacy, name: TV box, monthly_fee: 10.00, days_since_used: 140}
+```
+
 Optional fixture blocks for mobile flows:
 
 ```yaml
@@ -64,7 +78,7 @@ Trade-in: the usual credit applies when the device is in `trade_in.eligible_devi
 
 ## `expected.outcome` values
 
-`truck_roll_avoided`, `credit_applied`, `offer_accepted`, `technician_booked`, `device_sold`, `storm_pass`. The test checks the matching dashboard metric moved.
+`truck_roll_avoided`, `credit_applied`, `offer_accepted`, `technician_booked`, `device_sold`, `storm_pass`, `account_fixed`. The test checks the matching dashboard metric moved.
 
 ## Example: signal problem that needs a technician
 

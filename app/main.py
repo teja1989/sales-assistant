@@ -33,6 +33,7 @@ from app.logging_setup import configure_logging
 from app.mcp_gateway import McpGateway, _root_cause
 from app.mcp_server import build_mcp_server
 from app.metrics import Metrics
+from app.oauth import DemoAccount, MockIdentityProvider, OAuthError
 from app.orchestrator import Orchestrator
 from app.prompts import build_system_prompt
 from app.scenarios import Scenario, load_scenarios, match_scenario
@@ -80,7 +81,9 @@ class AppState:
     signer: HandoffSigner
     metrics: Metrics
     llm: LlmClient
+    idp: MockIdentityProvider
     scenarios: dict[str, Scenario] = field(default_factory=dict)
+    customers: dict[str, dict[str, Any]] = field(default_factory=dict)  # fixture by customer id
 
 
 def _state(request: Request) -> AppState:
@@ -111,6 +114,7 @@ async def api_config(request: Request) -> Response:
             "app_name": s.app_name,
             "assistant_name": s.assistant_name,
             "brand_name": s.brand_name,
+            "oauth_required": s.oauth_required,
             "tagline": s.tagline,
             "llm": ctx.llm.name,
             "live_configured": s.live_configured,
@@ -147,8 +151,23 @@ async def api_handoff(request: Request) -> Response:
     )
 
 
+def _bearer(request: Request) -> str:
+    header = request.headers.get("authorization", "")
+    return header[7:].strip() if header.lower().startswith("bearer ") else ""
+
+
 async def api_create_session(request: Request) -> Response:
     ctx = _state(request)
+    # Validate the sign-in first so a bad token never burns the single-use handoff link.
+    claims: dict[str, Any] | None = None
+    if ctx.settings.oauth_required:
+        token = _bearer(request)
+        if not token:
+            return JSONResponse({"error": "sign_in_required", "message": "Please sign in to continue."}, 401)
+        try:
+            claims = ctx.idp.verify(token)
+        except OAuthError as exc:
+            return JSONResponse({"error": exc.error, "message": exc.description}, exc.status)
     body: SessionRequest = await _parse(request, SessionRequest)
     try:
         handoff = ctx.signer.redeem(body.handoff_token)
@@ -157,17 +176,31 @@ async def api_create_session(request: Request) -> Response:
     scenario = ctx.scenarios.get(handoff.scenario_id)
     if scenario is None:
         return JSONResponse({"error": "unknown_scenario"}, 404)
-    customer_id = ctx.store.add_customer(scenario.customer, clone=True)
+    # The signed-in account decides whose data we see, never the URL or the scenario.
+    fixture = ctx.customers.get(claims["sub"]) if claims else scenario.customer
+    if fixture is None:
+        return JSONResponse({"error": "unknown_account"}, 401)
+    customer_id = ctx.store.add_customer(fixture, clone=True)
     session, _ = ctx.sessions.create(
         scenario=scenario,
         customer_id=customer_id,
         live_customer_id=scenario.live_customer_id,
         search_query=handoff.search_query,
     )
+    if claims:
+        session.scopes = frozenset(str(claims.get("scope", "")).split())
+        session.token_jti = str(claims["jti"])
+    access_note = (
+        "\n- Account access: the customer signed in and allowed you to view and, with their confirmation, change "
+        "their account."
+        if "account:manage" in session.scopes
+        else "\n- Account access: VIEW ONLY. You cannot make changes; explain what could be done and how the "
+        "customer can do it, or how to reconnect with permission to make changes."
+    )
     session.messages.append(
         {
             "role": "system",
-            "content": build_system_prompt(ctx.settings, scenario, handoff.search_query),
+            "content": build_system_prompt(ctx.settings, scenario, handoff.search_query) + access_note,
         }
     )
     ctx.metrics.session_started(session.id, scenario.id)
@@ -182,8 +215,23 @@ async def api_create_session(request: Request) -> Response:
             },
             "search_query": handoff.search_query,
             "customer": {"first_name": profile["first_name"], "plan": profile["plan"]["name"]},
+            "access": {
+                "connected": bool(claims),
+                "can_make_changes": "account:manage" in session.scopes,
+            },
         }
     )
+
+
+async def api_disconnect(request: Request) -> Response:
+    """Customer disconnects their account: revoke the token and drop the session and its data."""
+    ctx = _state(request)
+    session = ctx.sessions.remove(request.path_params["session_id"])
+    if session is None:
+        return JSONResponse({"disconnected": True})
+    if session.token_jti:
+        ctx.idp.revoke(session.token_jti)
+    return JSONResponse({"disconnected": True})
 
 
 async def api_turn(request: Request) -> Response:
@@ -197,6 +245,9 @@ async def api_turn(request: Request) -> Response:
         return JSONResponse({"error": "empty_turn"}, 422)
     if len(message) > ctx.settings.max_user_message_chars:
         return JSONResponse({"error": "message_too_long"}, 422)
+    if session.token_jti and ctx.idp.is_revoked(session.token_jti):
+        ctx.sessions.remove(session.id)
+        return JSONResponse({"error": "disconnected", "message": "Your account was disconnected."}, 401)
     if session.busy:
         return JSONResponse({"error": "busy", "message": "Still working on your last message."}, 409)
     if body.kickoff and len(session.messages) > 1:
@@ -299,14 +350,21 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
         signer=HandoffSigner(settings.handoff_secret, settings.handoff_ttl_s),
         metrics=metrics,
         llm=llm,
+        idp=MockIdentityProvider(settings.oauth_signing_secret, settings.oauth_token_ttl_s),
     )
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
         specs = await gateway.load_specs()
         ctx.scenarios = load_scenarios(settings.scenarios_dir, set(specs))
+        accounts = []
         for scenario in ctx.scenarios.values():
             store.add_customer(scenario.customer)  # base copies, reachable via /mcp for tooling demos
+            cid = str(scenario.customer["id"])
+            ctx.customers[cid] = scenario.customer
+            plan = store.plan(scenario.customer["plan_id"])["name"]
+            accounts.append(DemoAccount(cid, str(scenario.customer["first_name"]), plan, scenario.id))
+        ctx.idp.set_accounts(accounts)
         log.info(
             "Started %s v%s: env=%s llm=%s scenarios=%s live_mcp=%s",
             settings.app_name,
@@ -327,6 +385,10 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
         Route("/api/handoff", api_handoff, methods=["POST"]),
         Route("/api/sessions", api_create_session, methods=["POST"]),
         Route("/api/sessions/{session_id}/turn", api_turn, methods=["POST"]),
+        Route("/api/sessions/{session_id}/disconnect", api_disconnect, methods=["POST"]),
+        Route("/oauth/authorize", ctx.idp.authorize_page, methods=["GET"]),
+        Route("/oauth/authorize/consent", ctx.idp.authorize_submit, methods=["POST"]),
+        Route("/oauth/token", ctx.idp.token, methods=["POST"]),
         Route("/api/metrics", api_metrics),
         Route("/api/metrics/reset", api_metrics_reset, methods=["POST"]),
         Route("/api/live/check", api_live_check),

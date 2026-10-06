@@ -27,8 +27,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ query, scenario_id: scenarioId }),
     }),
-  createSession: (token: string) =>
-    request<SessionInfo>("/api/sessions", { method: "POST", body: JSON.stringify({ handoff_token: token }) }),
+  createSession: (token: string, accessToken?: string) =>
+    request<SessionInfo>("/api/sessions", {
+      method: "POST",
+      body: JSON.stringify({ handoff_token: token }),
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    }),
+  disconnect: (sessionId: string) =>
+    request<{ disconnected: boolean }>(`/api/sessions/${encodeURIComponent(sessionId)}/disconnect`, { method: "POST" }),
   metrics: () => request<Metrics>("/api/metrics"),
   resetMetrics: () => request<{ reset: boolean }>("/api/metrics/reset", { method: "POST" }),
 };

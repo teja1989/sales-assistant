@@ -11,7 +11,7 @@ from app.config import ConfigError
 from app.handoff import AUDIENCE, ISSUER, HandoffError, HandoffSigner
 from app.logging_setup import mask_pii
 from app.main import create_app
-from tests.conftest import TEST_ENV, make_settings, start_session
+from tests.conftest import TEST_ENV, make_settings, sign_in, start_session
 
 MCP_HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
@@ -101,8 +101,9 @@ def test_handoff_rejects_alg_none_and_expired() -> None:
 
 def test_session_endpoint_rejects_reused_handoff(client) -> None:
     token = client.post("/api/handoff", json={"scenario_id": "speed-upgrade"}).json()["token"]
-    assert client.post("/api/sessions", json={"handoff_token": token}).status_code == 200
-    assert client.post("/api/sessions", json={"handoff_token": token}).status_code == 401
+    auth = {"Authorization": f"Bearer {sign_in(client, 'speed-upgrade')}"}
+    assert client.post("/api/sessions", json={"handoff_token": token}, headers=auth).status_code == 200
+    assert client.post("/api/sessions", json={"handoff_token": token}, headers=auth).status_code == 401
 
 
 # ---------------------------------------------------------------- config

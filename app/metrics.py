@@ -40,6 +40,8 @@ class Metrics:
             self.monthly_revenue_delta = 0.0
             self.credits_issued = 0.0
             self.device_revenue = 0.0
+            self.savings_found = 0.0
+            self.savings_realized = 0.0
             self.trade_in_credits = 0.0
             self.events: deque[dict[str, Any]] = deque(maxlen=150)
 
@@ -107,6 +109,21 @@ class Metrics:
                 elif data.get("offers") and self._outcome(session_id, "offer_presented"):
                     self._bump(session_id, "offers_presented")
                     self._event(session_id, "offer_presented", ", ".join(o["name"] for o in data["offers"]))
+            elif tool == "get_account_checkup" and isinstance(data.get("summary"), dict):
+                if self._outcome(session_id, "checkup"):
+                    self._bump(session_id, "checkups_run")
+                    found = int(data["summary"].get("attention_count", 0))
+                    self._bump(session_id, "account_issues_found", found)
+                    self.savings_found += float(data["summary"].get("potential_monthly_savings", 0))
+                    self._event(session_id, "checkup", f"{found} items need attention")
+            elif tool in ("enroll_autopay", "return_unused_equipment", "update_gateway_firmware") and (
+                data.get("enrolled") or data.get("return_started") or data.get("scheduled")
+            ):
+                self._bump(session_id, "account_issues_fixed")
+                saved = float(data.get("monthly_discount") or data.get("monthly_fee_removed") or 0)
+                self.savings_realized += saved
+                self._event(session_id, "account_fix", tool.replace("_", " "))
+                self._resolve(session_id)
             elif tool == "get_device_offer" and isinstance(data.get("offer"), dict):
                 if self._outcome(session_id, "offer_presented"):
                     self._bump(session_id, "offers_presented")
@@ -136,6 +153,9 @@ class Metrics:
             elif tool == "submit_upgrade_order" and data.get("submitted") and not data.get("duplicate"):
                 self._bump(session_id, "offers_accepted")
                 self.monthly_revenue_delta += float(data.get("monthly_change") or 0)
+                if data.get("type") == "plan_change":
+                    self._bump(session_id, "account_issues_fixed")
+                    self.savings_realized += float(data.get("monthly_savings") or 0)
                 if data.get("type") == "device":
                     self._bump(session_id, "devices_sold")
                     self.device_revenue += float(data.get("full_price") or 0)
@@ -179,6 +199,11 @@ class Metrics:
                 "mobile_bundles": c["mobile_bundles"],
                 "new_mobile_lines": c["new_mobile_lines"],
                 "storm_data_passes": c["storm_data_passes"],
+                "checkups_run": c["checkups_run"],
+                "account_issues_found": c["account_issues_found"],
+                "account_issues_fixed": c["account_issues_fixed"],
+                "monthly_savings_found_usd": round(self.savings_found, 2),
+                "monthly_savings_realized_usd": round(self.savings_realized, 2),
                 "incremental_monthly_revenue_usd": round(self.monthly_revenue_delta, 2),
                 "actions_confirmed": c["actions_confirmed"],
                 "actions_declined": c["actions_declined"],

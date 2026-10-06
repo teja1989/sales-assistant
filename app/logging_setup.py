@@ -38,7 +38,7 @@ class PiiMaskingFilter(logging.Filter):
 
 
 _SESSION_PATH = re.compile(r"(/api/sessions/)[A-Za-z0-9_-]{8,}")
-_TOKEN_PARAM = re.compile(r"((?:ctx|token|handoff_token)=)[^&\s#]+", re.I)
+_TOKEN_PARAM = re.compile(r"((?:ctx|token|handoff_token|code|code_verifier|state)=)[^&\s#]+", re.I)
 
 
 def mask_path(path: str) -> str:

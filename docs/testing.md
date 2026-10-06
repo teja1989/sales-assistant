@@ -17,6 +17,7 @@ make smoke          # against a running app; BASE_URL=https://... for Cloud Foun
 | `tests/test_security.py` | `/mcp` bearer auth, security headers, rate limit, body limit, basic-auth gate, handoff replay/forgery/`alg=none`/expiry, secret requirements, `VCAP_SERVICES` parsing, PII masking |
 | `tests/test_sim_rules.py` | Business rules: no upsell while broken, right-sized recommendations, honest "you don't need it", credit once, idempotent orders, free mobile year on 800+, trade-in and valued-customer bonus, device orders, storm pass once |
 | `tests/test_mcp_contract.py` | Tool inventory, read/action classification, `customer_id` hidden from the model, live fallback behaviour, scenario validation |
+| `tests/test_oauth.py` | Full authorization-code + PKCE flow; wrong verifier, code reuse, burned codes, redirect-URI mismatch, foreign redirect URIs, plain PKCE, unknown client/scope, tampered consent, cancel; sessions need valid tokens; identity from token wins; view-only blocks actions; disconnect and revocation; log masking |
 | `tests/test_llm_client.py` | Azure and OpenAI-compatible request shape, streamed text + tool-call assembly, Azure filter chunks, retry on 429, errors without key leakage, content filter |
 
 ## Testing with the real model

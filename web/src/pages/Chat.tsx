@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { ApiError, api, streamTurn, type TurnBody } from "../api";
+import { beginSignIn, completeSignIn, SignInError } from "../oauth";
 import { Link } from "../router";
 import { Avatar, FRIENDLY_TOOL } from "../components/Avatar";
 import { BrandMark } from "../components/BrandMark";
@@ -83,6 +84,9 @@ export function Chat({ config }: { config: AppConfig | null }) {
   const [draft, setDraft] = useState("");
   const [showTrace, setShowTrace] = useState(false);
   const started = useRef(false);
+  const [stage, setStage] = useState<"loading" | "link" | "chat" | "disconnected">("loading");
+  const [pendingCtx, setPendingCtx] = useState<{ ctx: string; scenario: string | null } | null>(null);
+  const [linking, setLinking] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   const send = useCallback(
@@ -100,25 +104,60 @@ export function Chat({ config }: { config: AppConfig | null }) {
     [],
   );
 
+  const openSession = useCallback(
+    (ctx: string, accessToken?: string) => {
+      api
+        .createSession(ctx, accessToken)
+        .then((info) => {
+          setSession(info);
+          setStage("chat");
+          void send(info.session_id, { kickoff: true });
+        })
+        .catch((err) => setFatal(err instanceof ApiError ? err.message : "Couldn't start the chat."));
+    },
+    [send],
+  );
+
   useEffect(() => {
-    if (started.current) return; // StrictMode runs effects twice in dev; the handoff token is single-use.
+    if (started.current) return; // StrictMode runs effects twice in dev; tokens and codes are single-use.
     started.current = true;
-    // The token rides in the URL fragment, which browsers never send to servers, proxies or access logs.
-    const token = new URLSearchParams(window.location.hash.slice(1)).get("ctx");
-    // Drop the token from the address bar and history right away.
-    window.history.replaceState({}, "", "/chat");
+    if (window.location.pathname === "/chat/callback") {
+      // Back from the identity provider: exchange the code, then open the chat.
+      completeSignIn()
+        .then(({ ctx, accessToken }) => {
+          window.history.replaceState({}, "", "/chat"); // drop code and state from the address bar
+          openSession(ctx, accessToken);
+        })
+        .catch((err) => {
+          window.history.replaceState({}, "", "/chat");
+          setFatal(err instanceof SignInError ? err.message : "Sign-in failed. Please try again.");
+        });
+      return;
+    }
+    // The handoff token rides in the URL fragment, which browsers never send to servers, proxies or logs.
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const token = fragment.get("ctx");
+    window.history.replaceState({}, "", "/chat"); // drop it from the address bar and history right away
     if (!token) {
       setFatal("Start from a search so the assistant knows what you need.");
       return;
     }
-    api
-      .createSession(token)
-      .then((info) => {
-        setSession(info);
-        void send(info.session_id, { kickoff: true });
-      })
-      .catch((err) => setFatal(err instanceof ApiError ? err.message : "Couldn't start the chat."));
-  }, [send]);
+    setPendingCtx({ ctx: token, scenario: fragment.get("s") });
+    setStage("link");
+  }, [openSession]);
+
+  useEffect(() => {
+    // If the server doesn't require sign-in (OAUTH_REQUIRED=false), skip the link step.
+    if (stage === "link" && pendingCtx && config && !config.oauth_required) openSession(pendingCtx.ctx);
+  }, [stage, pendingCtx, config, openSession]);
+
+  const disconnect = () => {
+    if (!session) return;
+    void api.disconnect(session.session_id).finally(() => {
+      setSession(null);
+      setStage("disconnected");
+    });
+  };
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -146,6 +185,61 @@ export function Chat({ config }: { config: AppConfig | null }) {
   const running = [...tools].reverse().find((t) => t.status === "running");
   const streaming = items.some((i) => i.kind === "bot" && i.streaming);
   const workingText = running ? `${FRIENDLY_TOOL[running.tool]?.working ?? "Working on it"}…` : "Typing…";
+
+  if (stage === "link" && pendingCtx && !fatal) {
+    return (
+      <div className="page chat-page">
+        <header className="topbar">
+          <BrandMark name={config?.app_name ?? "Tidelink"} tagline={config?.tagline} />
+        </header>
+        <main className="link-panel">
+          <Avatar size={72} label={`${assistant}, AI assistant`} />
+          <h1>Connect your account</h1>
+          <p className="lede">
+            Sign in with your provider so {assistant} can look at your account and help right away, without asking you
+            to repeat anything.
+          </p>
+          <ul className="link-points">
+            <li>See your services, usage and bills, and spot anything that needs attention</li>
+            <li>Make changes only when you tap Confirm. You choose whether to allow this.</li>
+            <li>{assistant} never sees your password, and you can disconnect anytime</li>
+          </ul>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={linking}
+            onClick={() => {
+              setLinking(true);
+              void beginSignIn(pendingCtx.ctx, pendingCtx.scenario).catch(() => {
+                setLinking(false);
+                setFatal("Couldn't start sign-in in this browser.");
+              });
+            }}
+          >
+            {linking ? "Opening sign-in…" : "Sign in with your provider"}
+          </button>
+        </main>
+      </div>
+    );
+  }
+
+  if (stage === "disconnected") {
+    return (
+      <div className="page chat-page">
+        <header className="topbar">
+          <BrandMark name={config?.app_name ?? "Tidelink"} tagline={config?.tagline} />
+        </header>
+        <main className="empty-state">
+          <Avatar size={64} />
+          <h1>Your account is disconnected</h1>
+          <p className="lede">{assistant} no longer has access, and this conversation's account data was removed.</p>
+          <Link to="/search" className="btn btn-primary">
+            Start a new conversation
+          </Link>
+        </main>
+      </div>
+    );
+  }
 
   if (fatal) {
     return (
@@ -177,6 +271,17 @@ export function Chat({ config }: { config: AppConfig | null }) {
             </>
           )}
         </div>
+        {session?.access?.connected && (
+          <div className="connected">
+            <span className="connected-dot" aria-hidden="true" />
+            <span>
+              Connected{session.access.can_make_changes ? "" : ", view only"}
+            </span>
+            <button type="button" className="link-button" onClick={disconnect}>
+              Disconnect
+            </button>
+          </div>
+        )}
         <button type="button" className="btn btn-ghost trace-toggle" onClick={() => setShowTrace((v) => !v)} aria-expanded={showTrace}>
           {showTrace ? "Hide trace" : "MCP trace"}
         </button>
@@ -224,7 +329,7 @@ export function Chat({ config }: { config: AppConfig | null }) {
               }
               if (item.kind === "tool")
                 return (
-                  <li key={item.id} className="msg-tool">
+                  <li key={item.id} className={`msg-tool ${item.tool === "get_account_checkup" ? "msg-tool-wide" : ""}`}>
                     <ToolCard item={item} />
                   </li>
                 );

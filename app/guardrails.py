@@ -12,7 +12,9 @@ def _norm(amount: str) -> str:
     return f"{float(amount.replace(',', '')):.2f}"
 
 
-MONEY_KEY = re.compile(r"price|amount|change|discount|fee|credit|cost|total|due|installment|charge", re.I)
+MONEY_KEY = re.compile(
+    r"price|amount|change|discount|fee|credit|cost|total|due|installment|charge|saving|increase", re.I
+)
 
 
 def collect_amounts(value: Any, out: set[str], key: str = "") -> None:

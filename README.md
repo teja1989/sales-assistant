@@ -17,6 +17,10 @@ A working prototype of an **MCP-connected chat assistant** for a home-internet a
 | Storm coming | Severe storm forecast; free 48-hour unlimited mobile data in one tap; "stay safe" | Proactive care, loyalty |
 | Looking at the iPhone 18 Pro | Verified device facts + personalized trade-in ($800 usual + $200 valued-customer bonus); preview, one-tap order | Device sale |
 
+| Why is my bill going up? | Signed-in account review: promo ending, paying for unused speed, unused rented box, autopay off, outdated gateway, card expiring; fixes one at a time | About $30/month saved, retention and trust |
+
+**Signed-in experience.** Customers connect their account with **OAuth 2.0 (authorization code + PKCE)** against a mock identity provider built into the app. The consent screen asks for "view my account" (required) and "make changes I confirm" (optional); view-only sessions can't change anything, enforced in code. Right after sign-in the chat opens with a proactive **account checkup**: what's good, and what needs attention across billing, service health, plan fit, and mobile and devices. Customers can disconnect at any time, which revokes the token and deletes the session's data.
+
 Cross-line-of-business offers: **upgrade to 800 Mbps or faster and get one Unlimited mobile line free for 12 months.** Every order goes through a **preview** (line items, new monthly bill, due today, included benefits) and a single confirmation tap. The assistant is told to be decisive: sensible defaults, at most one question per reply.
 
 A live **impact dashboard** counts containment, truck rolls avoided, offer conversion, new monthly revenue, upsells held back until a fault was fixed, devices sold, mobile bundles and new lines, storm passes, and guardrail interventions. Every number is derived from tool results and confirmed actions, never from what the model said.

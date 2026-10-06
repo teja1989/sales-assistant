@@ -22,6 +22,8 @@ const EVENT_TEXT: Record<string, string> = {
   tool_error: "Tool error",
   order_previewed: "Order previewed",
   storm_pass_activated: "Storm data pass on",
+  checkup: "Account checkup",
+  account_fix: "Account item fixed",
 };
 
 export function Dashboard({ config }: { config: AppConfig | null }) {
@@ -109,6 +111,16 @@ export function Dashboard({ config }: { config: AppConfig | null }) {
                     <small>times an offer waited for a fix first</small>
                   </dd>
                 </div>
+              </dl>
+            </section>
+
+            <section className="ops" aria-label="Account checkups">
+              <h2>Account checkups</h2>
+              <dl>
+                <div><dt>Checkups after sign-in</dt><dd>{m.checkups_run}</dd></div>
+                <div><dt>Issues found</dt><dd>{m.account_issues_found}</dd></div>
+                <div><dt>Issues fixed in chat</dt><dd>{m.account_issues_fixed}</dd></div>
+                <div><dt>Savings found / realized</dt><dd>{usd(m.monthly_savings_found_usd)} / {usd(m.monthly_savings_realized_usd)}</dd></div>
               </dl>
             </section>
 

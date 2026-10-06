@@ -59,6 +59,10 @@ export const FRIENDLY_TOOL: Record<string, { title: string; working: string }> =
   schedule_technician: { title: "Technician visit", working: "Booking a technician" },
   apply_service_credit: { title: "Bill credit", working: "Adding your credit" },
   activate_storm_data_pass: { title: "Storm data pass", working: "Turning on your storm data pass" },
+  get_account_checkup: { title: "Account checkup", working: "Looking over your account" },
+  enroll_autopay: { title: "Autopay", working: "Turning on autopay" },
+  return_unused_equipment: { title: "Equipment return", working: "Starting your return" },
+  update_gateway_firmware: { title: "Gateway update", working: "Scheduling your gateway update" },
 };
 
 /** Confirmation headings phrased as a question to the customer. */
@@ -68,4 +72,7 @@ export const CONFIRM_HEADING: Record<string, string> = {
   schedule_technician: "Book this technician visit?",
   apply_service_credit: "Add this credit to your bill?",
   activate_storm_data_pass: "Turn on your storm data pass?",
+  enroll_autopay: "Turn on autopay and paperless?",
+  return_unused_equipment: "Return this equipment?",
+  update_gateway_firmware: "Schedule the gateway update?",
 };

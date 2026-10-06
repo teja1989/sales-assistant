@@ -1,0 +1,79 @@
+# Signed-in customer asks why the bill is going up. The assistant reviews the whole account and fixes
+# what it can, one item at a time: right-size the plan before the promo ends, return an unused box,
+# turn on autopay, schedule a gateway update. Reminders for things only the customer can do.
+id: account-checkup
+title: "Why is my bill going up?"
+description: "Full account review after sign-in: what's good, what needs attention, and one-tap fixes that cut the bill by about $30/month."
+intent: account
+search_query: "why is my internet bill going up next month"
+match_keywords: [bill, billing, account, charges, charge, "bill going up", "higher bill", autopay, payment, promo, "check my account", expensive]
+assistant_brief: >
+  The customer is signed in and wants their account reviewed. Summarize what's good and what needs
+  attention from get_account_checkup, then work through the fixable items one at a time, biggest
+  saving first, each with a single confirmation. Be honest when a cheaper plan fits better. Never ask
+  for card numbers; send them to the secure Payments page.
+tools:
+  - get_customer_profile
+  - get_account_checkup
+  - check_area_outage
+  - run_line_diagnostics
+  - get_usage_profile
+  - get_eligible_offers
+  - preview_order
+  - submit_upgrade_order
+  - enroll_autopay
+  - return_unused_equipment
+  - update_gateway_firmware
+  - get_device_offer
+data_sources: {}
+suggested_replies:
+  - "Yes, let's do it"
+  - "Why did the price change?"
+  - "Review my account"
+customer:
+  id: LUM-9100
+  first_name: Morgan
+  plan_id: gig-1000
+  tenure_months: 30
+  region: Harbor View
+  equipment:
+    gateway_model: LX-6 Wi-Fi 6 Gateway
+    firmware: "6.2.1"
+    rented:
+      - {id: tv-box-legacy, name: TV box, monthly_fee: 10.00, days_since_used: 140}
+  outage: null
+  fault: null
+  billing:
+    autopay: false
+    paperless: false
+    last_payment_status: ok
+    card_expires_in_days: 40
+    promo:
+      name: Gigabit welcome offer
+      ends_in_days: 9
+      current_monthly_price: 70.00
+      after_promo_price: 85.00
+  mobile:
+    plan: Unlimited
+    lines:
+      - {line_id: LN-91A1, device: iPhone 14 Pro, device_condition: good, device_paid_off: true}
+  line:
+    gateway_online: true
+    downstream_snr_db: 39.0
+    downstream_power_dbmv: 1.5
+    upstream_power_dbmv: 42.0
+    drops_24h: 0
+    uptime_hours: 300
+  wifi:
+    coverage: good
+    connected_devices: 11
+  usage:
+    peak_utilization_pct: 22
+    hours_at_cap_30d: 0
+    measured_speed_mbps: 938
+    top_activities: [HD streaming, video calls, browsing]
+expected:
+  must_call: [get_account_checkup, get_eligible_offers, preview_order, return_unused_equipment, enroll_autopay, update_gateway_firmware]
+  must_not_call: [reboot_gateway]
+  confirm_action: submit_upgrade_order
+  outcome: account_fixed

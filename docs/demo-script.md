@@ -1,4 +1,4 @@
-# Demo script (about 10 minutes)
+# Demo script (about 12 minutes)
 
 Setup: app running (`make run` with Azure, or `make run-mock`). Two tabs: **Home** and **Impact** (`/dashboard`). Click **Reset numbers** on the dashboard first.
 
@@ -6,9 +6,23 @@ Setup: app running (`make run` with Azure, or `make run-mock`). Two tabs: **Home
 
 Customers ask AI assistants about their internet before they ever call us. Today that ends in a generic answer or a phone queue. This prototype shows the handoff into our own assistant, connected to our systems through MCP.
 
+## 1b. Sign in and account checkup (2 min)
+
+Search "why is my internet bill going up next month" → **Continue with Tidelink** → **Sign in with your provider**. On the (simulated) provider page, point out the two permissions: viewing is required, making changes is the customer's choice. **Allow and continue**.
+
+The chat opens with an **account checkup** card: what's good (no outages, healthy connection, payments up to date) and what needs attention, with savings. Tidelink then goes one item at a time:
+
+1. Promo ends in 9 days and the bill goes to $85; the customer uses about 220 Mbps at peak, so it recommends **Plus 500 at $70**, a cheaper plan. **Yes, let's do it** → preview → Confirm.
+2. Gateway update overnight → Confirm.
+3. Unused TV box, $10/month → Confirm.
+4. Autopay and paperless, $5/month off → Confirm.
+5. Reminders it can't act on: card expiring (never take card numbers in chat), phone paid off.
+
+Dashboard: checkups, issues found and fixed, savings found and realized. Optional: repeat with **make changes** unchecked to show view-only access is enforced, then **Disconnect**.
+
 ## 2. Broken, not slow: no upsell (2 min)
 
-1. Home → **Start from a search** → "why does my home internet keep dropping" → **Continue with Tidelink**.
+1. Home → **Start from a search** → "why does my home internet keep dropping" → **Continue with Tidelink** → sign in.
 2. Point out: no "what's your account number". It greets the customer by name and already knows the question.
 3. Open **MCP trace** (right side): profile, outage and diagnostics ran in parallel, each badged **sim** or **live** with latency.
 4. Diagnosis: gateway fault, 7 drops in 24 hours. It proposes a remote reboot. **Nothing happens until the customer confirms.**

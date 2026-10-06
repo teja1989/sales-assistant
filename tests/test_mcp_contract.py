@@ -20,6 +20,7 @@ READ_TOOLS = {
     "get_device_offer",
     "check_service_alerts",
     "preview_order",
+    "get_account_checkup",
 }
 ACTION_TOOLS = {
     "reboot_gateway",
@@ -27,6 +28,9 @@ ACTION_TOOLS = {
     "apply_service_credit",
     "submit_upgrade_order",
     "activate_storm_data_pass",
+    "enroll_autopay",
+    "return_unused_equipment",
+    "update_gateway_firmware",
 }
 
 

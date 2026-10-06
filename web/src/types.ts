@@ -5,6 +5,7 @@ export interface AppConfig {
   assistant_name: string;
   brand_name: string;
   tagline: string;
+  oauth_required: boolean;
   llm: string;
   live_configured: boolean;
   live_host: string | null;
@@ -27,6 +28,7 @@ export interface SessionInfo {
   scenario: ScenarioView;
   search_query: string;
   customer: { first_name: string; plan: string };
+  access?: { connected: boolean; can_make_changes: boolean };
 }
 
 export type Json = Record<string, unknown>;
@@ -101,6 +103,11 @@ export interface Metrics {
   mobile_bundles: number;
   new_mobile_lines: number;
   storm_data_passes: number;
+  checkups_run: number;
+  account_issues_found: number;
+  account_issues_fixed: number;
+  monthly_savings_found_usd: number;
+  monthly_savings_realized_usd: number;
   incremental_monthly_revenue_usd: number;
   actions_confirmed: number;
   actions_declined: number;

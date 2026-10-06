@@ -20,6 +20,7 @@ OUTCOME_METRIC = {
     "technician_booked": "technician_visits_booked",
     "device_sold": "devices_sold",
     "storm_pass": "storm_data_passes",
+    "account_fixed": "account_issues_fixed",
 }
 
 OFFER_TOOLS = ("get_eligible_offers", "get_device_offer")
@@ -30,7 +31,7 @@ def play(client, scenario_id: str) -> tuple[list[dict], list[str]]:
     sid = start_session(client, scenario_id)
     events = turn(client, sid, {"kickoff": True})
     history = list(events)
-    for _ in range(4):
+    for _ in range(10):
         pending = [e for e in events if e["type"] == "confirm_required"]
         if pending:
             events = turn(client, sid, {"confirmation": {"action_id": pending[-1]["action_id"], "approved": True}})

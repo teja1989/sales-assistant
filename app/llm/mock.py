@@ -28,6 +28,7 @@ OFF_TOPIC = re.compile(
     r"\b(stock|stocks|invest|lawyer|legal advice|medical|doctor|diagnos\w*|election|politic\w*|vote)\b", re.I
 )
 FRUSTRATED = re.compile(r"\b(frustrat\w*|angry|ridiculous|terrible|unacceptable|fed up)\b", re.I)
+REVIEW = re.compile(r"\b(review my account|check my account|account checkup|what else)\b", re.I)
 NO = re.compile(r"\b(no|nope|not now|later|nah|cancel|don'?t)\b", re.I)
 
 
@@ -84,6 +85,11 @@ class MockLlm:
             r = results.get(tool)
             return r.get("status") if isinstance(r, dict) else None
 
+        if (
+            any(m["role"] == "user" and REVIEW.search(m.get("content") or "") for m in messages)
+            and "get_account_checkup" in results
+        ):
+            intent = "account"
         query_match = re.search(r'searched for: "([^"]*)"', system)
         query = query_match.group(1) if query_match else ""
 
@@ -93,6 +99,9 @@ class MockLlm:
             if can("get_device_offer"):
                 calls.append(("get_device_offer", {"model": query or last_user}))
             return "Happy to help. Let me pull up the details and what you'd personally get for it.", calls
+        if "get_customer_profile" not in results and intent == "account":
+            calls = [(t, {}) for t in ("get_customer_profile", "get_usage_profile") if can(t)]
+            return "Thanks for signing in. Let me look over your account.", calls
         if "get_customer_profile" not in results and intent == "alert":
             calls = [(t, {}) for t in ("get_customer_profile", "check_service_alerts", "check_area_outage") if can(t)]
             return "Let me check what's happening in your area.", calls
@@ -115,7 +124,16 @@ class MockLlm:
                     [],
                 )
             if data.get("status") == "declined_by_customer":
+                if intent == "account":
+                    nxt_text, nxt_calls = self._account_next(results, can, messages)
+                    return "No problem, I'll leave that as it is. " + nxt_text, nxt_calls
                 return "No problem, I won't do that. Is there anything else I can help with?", []
+            if data.get("error") == "permission_not_granted":
+                return (
+                    "I only have view access to your account, so I can't make that change for you. If you'd like me "
+                    'to, disconnect and sign in again with "make changes" allowed. Otherwise you can do it yourself '
+                    "in the app, and I'm happy to walk you through it."
+                ), []
             if data.get("error"):
                 detail = str(data["error"])
                 if "catalog" in detail:
@@ -123,7 +141,13 @@ class MockLlm:
                 return "I couldn't complete that step just now. I can connect you with a specialist if you'd like.", []
             narration = self._narrate_action(tool, data, results)
             if narration is not None:
-                return narration
+                text, calls = narration
+                if intent == "account" and not calls and tool != "preview_order":
+                    nxt_text, nxt_calls = self._account_next(results, can, messages)
+                    return text.replace(" Anything else I can help with?", "") + "\n\n" + nxt_text, nxt_calls
+                if intent != "account" and not calls:
+                    text += self._checkup_mention(results, messages)
+                return text, calls
 
         profile = results["get_customer_profile"]
         name = profile.get("first_name", "there")
@@ -178,6 +202,17 @@ class MockLlm:
                     ]
             if NO.search(last_user):
                 return "Totally fine. Nothing changes on your account. Anything else I can help with?", []
+
+        if intent == "account" and "get_account_checkup" in results:
+            if not any(
+                "here's what i found" in (m.get("content") or "").lower() for m in messages if m["role"] == "assistant"
+            ):
+                summary = self._account_summary(name, results["get_account_checkup"])
+                nxt_text, nxt_calls = self._account_next(results, can, messages)
+                return summary + "\n\n" + nxt_text, nxt_calls
+            if offers is not None and offers.get("need") == "save" and not ordered and last["role"] == "tool":
+                return self._present_savings(name, plan, results), []
+            return self._account_next(results, can, messages)
 
         # Device and alert flows don't need line diagnostics.
         if intent == "device" and device and not ordered:
@@ -286,6 +321,11 @@ class MockLlm:
                     f"**{data['item']}**: {_money(data['device_total'])} after your trade-in, or "
                     f"**{_money(data['monthly_installment'])}/month** for {data['installment_months']} months."
                 )
+            elif data.get("type") == "plan_change":
+                parts.append(
+                    f"New monthly price: **{_money(data['new_monthly_price'])}**, instead of "
+                    f"{_money(data['price_if_unchanged'])} once your promo ends."
+                )
             else:
                 parts.append(
                     f"New monthly price: **{_money(data['new_monthly_price'])}** (today {_money(data['current_monthly_price'])})."
@@ -296,6 +336,21 @@ class MockLlm:
             return " ".join(parts) + " Tap **Confirm** to place the order.", [
                 ("submit_upgrade_order", {"offer_id": data["offer_id"]})
             ]
+        if tool == "return_unused_equipment" and data.get("return_started"):
+            return (
+                f"Done. The **{_money(data['monthly_fee_removed'])}/month** charge for the {data['item']} stops, "
+                "and a prepaid return label is on its way by email."
+            ), []
+        if tool == "enroll_autopay" and data.get("enrolled"):
+            return (
+                f"Autopay and paperless are on, using {data['uses']}. That's **{_money(data['monthly_discount'])}/month** "
+                "off starting with your next bill."
+            ), []
+        if tool == "update_gateway_firmware" and data.get("scheduled"):
+            return (
+                f"Your gateway update to {data['to_version']} is scheduled for {data['when'][0].lower() + data['when'][1:]}.",
+                [],
+            )
         if tool == "activate_storm_data_pass" and data.get("activated"):
             return (
                 f"Done. Free unlimited mobile data is on for **{data['hours']} hours** across your "
@@ -317,6 +372,105 @@ class MockLlm:
                 f"{data.get('effective', '')}.{price_text}{extra} Anything else I can help with?"
             ), []
         return None
+
+    # ------------------------------------------------------------ account review
+    @staticmethod
+    def _account_summary(name: str, checkup: dict[str, Any]) -> str:
+        good = checkup.get("good", [])
+        attention = [a for a in checkup.get("attention", []) if a.get("severity") != "info"]
+        lines = [f"Hi {name}, here's what I found in your account."]
+        if good:
+            lines.append("\n**Looking good:** " + "; ".join(g[0].lower() + g[1:] for g in good[:4]) + ".")
+        if attention:
+            lines.append("\n**Worth a look:**")
+            lines += [f"- {a['title']}" for a in attention[:5]]
+        savings = checkup.get("summary", {}).get("potential_monthly_savings", 0)
+        if savings:
+            lines.append(f"\nTogether these could save you about **{_money(savings)}/month**. Let's go one at a time.")
+        return "\n".join(lines)
+
+    def _account_next(
+        self, results: dict[str, Any], can, messages: list[dict[str, Any]]
+    ) -> tuple[str, list[tuple[str, dict]]]:
+        checkup = results.get("get_account_checkup", {})
+        for item in checkup.get("attention", []):
+            fix = item.get("fix") or {}
+            tool = fix.get("tool")
+            if not tool or item.get("severity") == "info" or tool in results or not can(tool):
+                continue
+            args = fix.get("args") or {}
+            if tool == "get_eligible_offers":
+                lead = "The biggest one first: " if item["id"] in ("overpaying", "promo_ending") else ""
+                detail = item["detail"][0].lower() + item["detail"][1:] if lead else item["detail"]
+                return f"{lead}{detail} Let me check what would keep your bill down.", [(tool, args)]
+            if tool == "return_unused_equipment":
+                return (
+                    f"Next: you're paying **{_money(item['monthly_savings'])}/month** for the {item['title'].split('Unused ', 1)[-1].replace(' on your bill', '')} "
+                    f"you haven't used in a while. I can start a free return and stop the charge; just tap **Confirm**."
+                ), [(tool, args)]
+            if tool == "enroll_autopay":
+                return (
+                    f"Next: autopay and paperless are off. Turning them on takes **{_money(item['monthly_savings'])}/month** "
+                    "off, using the payment method you already have saved. Tap **Confirm** if you'd like that."
+                ), [(tool, args)]
+            if tool == "update_gateway_firmware":
+                return (
+                    f"Next: {item['detail']} I can schedule it overnight so it won't interrupt you. "
+                    "Tap **Confirm** if that works."
+                ), [(tool, args)]
+            return f"Next: {item['title']}. {item['detail']}", [(tool, args)]
+        # Nothing left to fix: close with reminders that need the customer, not the assistant.
+        notes = []
+        for item in checkup.get("attention", []):
+            if item["id"] == "card_expiring":
+                notes.append(
+                    "your card on file expires soon, so please update it in the secure Payments page "
+                    "(I'll never ask for card numbers here)"
+                )
+            elif item["id"] == "payment_failed":
+                notes.append("your last payment didn't go through; the secure Payments page is the quickest fix")
+            elif item["category"] == "mobile" and item["severity"] == "info":
+                notes.append(item["detail"][0].lower() + item["detail"][1:].rstrip("."))
+        if notes:
+            return "That's everything I can take care of here. Two quick reminders: " + "; and ".join(
+                notes[:2]
+            ) + ".", []
+        covered = [
+            a["title"].lower() for a in checkup.get("attention", []) if (a.get("fix") or {}).get("tool") in results
+        ]
+        if covered:
+            return f"The only item is the one we already covered: {covered[0]}. Everything else looks good.", []
+        return "That's everything. Your account is in good shape.", []
+
+    @staticmethod
+    def _checkup_mention(results: dict[str, Any], messages: list[dict[str, Any]]) -> str:
+        checkup = results.get("get_account_checkup") or {}
+        if any("review my account" in (m.get("content") or "") for m in messages if m["role"] == "assistant"):
+            return ""
+        open_items = [a for a in checkup.get("attention", []) if a.get("severity") != "info"]
+        if not open_items:
+            return ""
+        return (
+            f"\n\nI also looked over your account while we talked: {len(open_items)} other "
+            f'thing{"s" if len(open_items) != 1 else ""} could use a look, like "{open_items[0]["title"].lower()}". '
+            "Just say **review my account** whenever you like."
+        )
+
+    def _present_savings(self, name: str, plan: dict[str, Any], results: dict[str, Any]) -> str:
+        offers = results["get_eligible_offers"]
+        pick = next((o for o in offers.get("offers", []) if o.get("recommended")), None)
+        if pick is None:
+            return "Your current plan is already the best fit for how you use it, so I'd keep it as it is."
+        usage = results.get("get_usage_profile", {})
+        peak = usage.get("peak_utilization_pct")
+        peak_mbps = round(plan.get("download_mbps", 0) * (peak or 0) / 100)
+        return (
+            f"You use about **{peak_mbps} Mbps** at peak, so **{pick['name']}** ({pick['download_mbps']} Mbps) at "
+            f"**{_money(pick['monthly_price'])}/month** still gives you plenty of headroom. That's "
+            f"**{_money(pick['monthly_savings'])}/month** less than your {plan.get('name')} list price of "
+            f"{_money(pick['compared_monthly_price'])}, which is what you'd pay once the promo ends. "
+            "You can move back up anytime, no contract.\n\nWant me to switch you?"
+        )
 
     def _present_device(self, name: str, data: dict[str, Any]) -> str:
         device = data["device"]

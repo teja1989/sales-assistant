@@ -33,6 +33,10 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
+def _version(v: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in str(v).split(".") if x.isdigit())
+
+
 def _money(value: float) -> float:
     return round(float(value) + 0.0, 2)
 
@@ -340,7 +344,7 @@ class SimStore:
             if device is None:
                 raise SimError("That offer is not available for this account.")
             return self.device_offer(customer_id, device["name"])["offer"]
-        need = "wifi" if offer_id.startswith("OFR-EQP-") else "speed"
+        need = "wifi" if offer_id.startswith("OFR-EQP-") else "save" if offer_id.startswith("OFR-SAV-") else "speed"
         eligible = self.offers(customer_id, need)
         if eligible["blocked"]:
             raise SimError("Orders are paused while a service issue is open.")
@@ -371,6 +375,18 @@ class SimStore:
                 "new_monthly_price": _money(current["monthly_price"] + monthly_after),
             }
             effective = "Ships free in 1-2 business days; trade-in kit included"
+        elif offer["type"] == "plan_change":
+            items = [{"label": f"{offer['name']} internet (monthly)", "amount": offer["monthly_price"]}]
+            promo_now = (c.get("billing") or {}).get("promo") or {}
+            summary = {
+                "current_monthly_price": _money(
+                    promo_now.get("current_monthly_price", offer["compared_monthly_price"])
+                ),
+                "price_if_unchanged": offer["compared_monthly_price"],
+                "new_monthly_price": offer["monthly_price"],
+                "monthly_savings": offer["monthly_savings"],
+            }
+            effective = f"Takes effect at your next bill; speed changes to {offer['download_mbps']} Mbps"
         elif offer["type"] == "equipment":
             items = [{"label": f"{offer['name']} (monthly)", "amount": offer["monthly_price"]}]
             summary = {
@@ -433,6 +449,8 @@ class SimStore:
         current = self._plans[c["plan_id"]]
         promo = self.catalog["upgrade_promo"]
         result: list[dict[str, Any]] = []
+        if need == "save":
+            return self._savings_offers(c, current)
         if need in ("wifi", "wifi_coverage"):
             pod = self._equipment["mesh-pod"]
             result.append(
@@ -580,6 +598,12 @@ class SimStore:
                 c.setdefault("usage", {})["peak_utilization_pct"] = 55
                 if offer.get("bundle"):
                     order["mobile_line_added"] = self._apply_mobile_free_year(c)
+            elif offer["type"] == "plan_change":
+                order["monthly_change"] = _money(-offer["monthly_savings"])
+                order["monthly_savings"] = offer["monthly_savings"]
+                c["plan_id"] = offer["plan_id"]
+                billing = c.setdefault("billing", {})
+                billing["promo"] = None  # the new plan's price replaces the expiring promo
             elif offer["type"] == "equipment":
                 order["monthly_change"] = _money(offer["monthly_price"])
                 c.setdefault("wifi", {})["coverage"] = "pending_pod_install"
@@ -593,6 +617,289 @@ class SimStore:
                     lines[0]["device"] = offer["name"]
             c["orders"].append(order)
         return {"submitted": True, "duplicate": False, **order}
+
+    # ------------------------------------------------------------ account checkup
+    def _savings_offers(self, c: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+        """Honest right-sizing: cheaper plans that still comfortably fit peak usage."""
+        usage = c.get("usage", {})
+        peak_mbps = current["download_mbps"] * usage.get("peak_utilization_pct", 0) / 100
+        fits = [
+            p
+            for p in self.catalog["plans"]
+            if p["download_mbps"] < current["download_mbps"] and p["download_mbps"] >= peak_mbps * 1.5
+        ]
+        offers = []
+        for plan in fits:
+            saving = current["monthly_price"] - plan["monthly_price"]
+            offers.append(
+                {
+                    "offer_id": f"OFR-SAV-{plan['id'].upper()}",
+                    "type": "plan_change",
+                    "name": plan["name"],
+                    "plan_id": plan["id"],
+                    "download_mbps": plan["download_mbps"],
+                    "upload_mbps": plan["upload_mbps"],
+                    "monthly_price": _money(plan["monthly_price"]),
+                    "compared_monthly_price": _money(current["monthly_price"]),
+                    "monthly_savings": _money(saving),
+                    "promo": None,
+                    "bundle": None,
+                    "recommended": False,
+                    "why": (
+                        f"Peak use is about {round(peak_mbps)} Mbps; "
+                        f"{plan['download_mbps']} Mbps leaves plenty of headroom."
+                    ),
+                    "terms": "No contract. You can move back up anytime.",
+                }
+            )
+        if offers:
+            # Recommend the biggest saving that still leaves comfortable headroom (>= 2x peak), else the safest.
+            comfortable = [o for o in offers if o["download_mbps"] >= peak_mbps * 2]
+            pick = (
+                min(comfortable or offers, key=lambda o: o["monthly_price"])
+                if comfortable
+                else max(offers, key=lambda o: o["download_mbps"])
+            )
+            pick["recommended"] = True
+        return {"blocked": False, "need": "save", "offers": offers}
+
+    def account_checkup(self, customer_id: str) -> dict[str, Any]:
+        """Proactive account review: what's good and what needs attention, with the fix for each."""
+        c = self._get(customer_id)
+        good: list[str] = []
+        attention: list[dict[str, Any]] = []
+        rules = self.catalog.get("billing", {})
+
+        def add(item_id: str, severity: str, category: str, title: str, detail: str, **extra: Any) -> None:
+            attention.append(
+                {"id": item_id, "severity": severity, "category": category, "title": title, "detail": detail, **extra}
+            )
+
+        # Service health
+        verdict, summary = self._verdict(c)
+        outage = c.get("outage")
+        if verdict == "area_outage":
+            add(
+                "outage",
+                "high",
+                "service",
+                "Outage in your area",
+                f"Service expected back in about {outage['eta_minutes']} minutes.",
+            )
+        else:
+            good.append("No outages in your area")
+        if verdict == "gateway_fault":
+            add(
+                "gateway_fault",
+                "high",
+                "service",
+                "Your gateway has a fault",
+                summary,
+                fix={"tool": "reboot_gateway", "args": {}},
+            )
+        elif verdict == "signal_issue":
+            add(
+                "signal",
+                "high",
+                "service",
+                "Signal problem on your line",
+                summary,
+                fix={"tool": "schedule_technician", "args": {"issue_summary": "Signal out of spec"}},
+            )
+        elif verdict == "wifi_coverage":
+            add(
+                "wifi",
+                "medium",
+                "service",
+                f"Weak Wi-Fi in the {c['wifi'].get('weakest_room', 'far rooms')}",
+                "A mesh pod would fix it; a faster plan would not.",
+                fix={"tool": "get_eligible_offers", "args": {"need": "wifi"}},
+            )
+        elif verdict != "area_outage":
+            drops = c.get("line", {}).get("drops_24h", 0)
+            good.append(f"Connection is healthy ({drops} drops in the last 24 hours)")
+        equipment = c.get("equipment", {})
+        latest = self.catalog.get("firmware_latest", {}).get(equipment.get("gateway_model", ""))
+        if latest and equipment.get("firmware") and _version(equipment["firmware"]) < _version(latest):
+            add(
+                "firmware",
+                "low",
+                "service",
+                "Gateway update available",
+                f"Your gateway runs {equipment['firmware']}; {latest} improves stability and security.",
+                fix={"tool": "update_gateway_firmware", "args": {}},
+            )
+        elif latest:
+            good.append("Gateway software is up to date")
+
+        # Plan fit
+        plan = self._plans[c["plan_id"]]
+        peak = c.get("usage", {}).get("peak_utilization_pct", 0)
+        if peak >= 85 and verdict not in ("area_outage", "gateway_fault", "signal_issue"):
+            add(
+                "outgrowing",
+                "medium",
+                "plan",
+                "You're outgrowing your plan",
+                f"At peak you use about {peak}% of {plan['download_mbps']} Mbps.",
+                fix={"tool": "get_eligible_offers", "args": {"need": "speed"}},
+            )
+        else:
+            savings = self._savings_offers(c, plan)["offers"]
+            best = next((o for o in savings if o["recommended"]), None)
+            if best and peak <= 35:
+                add(
+                    "overpaying",
+                    "medium",
+                    "plan",
+                    "You may be paying for more speed than you use",
+                    f"At peak you use about {peak}% of {plan['download_mbps']} Mbps. {best['name']} would still "
+                    f"leave plenty of headroom.",
+                    monthly_savings=best["monthly_savings"],
+                    fix={"tool": "get_eligible_offers", "args": {"need": "save"}},
+                )
+            else:
+                good.append("Your plan fits how you use it")
+        for item in equipment.get("rented", []) or []:
+            if item.get("days_since_used", 0) >= 60:
+                add(
+                    f"unused-{item['id']}",
+                    "low",
+                    "plan",
+                    f"Unused {item['name']} on your bill",
+                    f"Not used in {item['days_since_used']} days.",
+                    monthly_savings=_money(item["monthly_fee"]),
+                    fix={"tool": "return_unused_equipment", "args": {"item_id": item["id"]}},
+                )
+
+        # Billing
+        billing = c.get("billing", {}) or {}
+        if billing.get("last_payment_status") == "failed":
+            add(
+                "payment_failed",
+                "high",
+                "billing",
+                "Your last payment didn't go through",
+                "Update your payment method in the secure Payments page to avoid a late fee.",
+                amount_due=_money(billing.get("amount_due", 0)),
+            )
+        elif billing:
+            good.append("Payments are up to date")
+        if billing and not billing.get("autopay"):
+            add(
+                "autopay",
+                "low",
+                "billing",
+                "Autopay and paperless are off",
+                "Turning them on uses your saved payment method and lowers your bill.",
+                monthly_savings=_money(rules.get("autopay_paperless_discount", 0)),
+                fix={"tool": "enroll_autopay", "args": {}},
+            )
+        elif billing.get("autopay"):
+            good.append("Autopay is on")
+        card_days = billing.get("card_expires_in_days")
+        if card_days is not None and card_days <= rules.get("card_expiry_warning_days", 60):
+            add(
+                "card_expiring",
+                "medium",
+                "billing",
+                "Your card on file expires soon",
+                f"It expires in {card_days} days. Update it in the secure Payments page; never share card "
+                "numbers in chat.",
+            )
+        promo = billing.get("promo")
+        if promo and promo.get("ends_in_days", 999) <= rules.get("promo_ending_warning_days", 30):
+            add(
+                "promo_ending",
+                "medium",
+                "billing",
+                f"Your promo ends in {promo['ends_in_days']} days",
+                f"Your bill goes from ${promo['current_monthly_price']:.2f} to ${promo['after_promo_price']:.2f}.",
+                monthly_increase=_money(promo["after_promo_price"] - promo["current_monthly_price"]),
+                current_monthly_price=_money(promo["current_monthly_price"]),
+                after_promo_price=_money(promo["after_promo_price"]),
+                fix={"tool": "get_eligible_offers", "args": {"need": "save"}},
+            )
+
+        # Mobile and devices
+        for line in (c.get("mobile") or {}).get("lines", []) or []:
+            if line.get("device_paid_off"):
+                add(
+                    f"upgrade-{line.get('line_id')}",
+                    "info",
+                    "mobile",
+                    "Your phone is paid off",
+                    f"Your {line.get('device')} is paid off, so you can upgrade anytime with a trade-in.",
+                    fix={"tool": "get_device_offer", "args": {"model": "iPhone 18 Pro"}},
+                )
+            limit = line.get("data_limit_gb")
+            if limit and line.get("data_used_gb", 0) >= 0.8 * limit:
+                add(
+                    f"data-{line.get('line_id')}",
+                    "medium",
+                    "mobile",
+                    "A line is close to its data limit",
+                    f"{line['data_used_gb']} of {limit} GB used this cycle.",
+                )
+
+        order = {"high": 0, "medium": 1, "low": 2, "info": 3}
+        attention.sort(key=lambda a: order.get(a["severity"], 9))
+        savings_total = sum(a.get("monthly_savings", 0) for a in attention)
+        return {
+            "good": good,
+            "attention": attention,
+            "summary": {
+                "good_count": len(good),
+                "attention_count": len(attention),
+                "potential_monthly_savings": _money(savings_total),
+            },
+        }
+
+    def enroll_autopay(self, customer_id: str) -> dict[str, Any]:
+        with self._lock:
+            c = self._get(customer_id)
+            billing = c.setdefault("billing", {})
+            if billing.get("autopay"):
+                raise SimError("Autopay is already on.")
+            billing["autopay"] = True
+            billing["paperless"] = True
+        return {
+            "enrolled": True,
+            "uses": "your saved payment method",
+            "monthly_discount": _money(self.catalog.get("billing", {}).get("autopay_paperless_discount", 0)),
+            "starts": "Next bill",
+        }
+
+    def return_unused_equipment(self, customer_id: str, item_id: str) -> dict[str, Any]:
+        with self._lock:
+            c = self._get(customer_id)
+            rented = c.get("equipment", {}).get("rented", []) or []
+            item = next((i for i in rented if i["id"] == item_id), None)
+            if item is None:
+                raise SimError("That equipment isn't on this account.")
+            rented.remove(item)
+        return {
+            "return_started": True,
+            "item": item["name"],
+            "monthly_fee_removed": _money(item["monthly_fee"]),
+            "how": "A prepaid return label is on its way by email; drop it at any shipping store.",
+        }
+
+    def update_gateway_firmware(self, customer_id: str) -> dict[str, Any]:
+        with self._lock:
+            c = self._get(customer_id)
+            equipment = c.setdefault("equipment", {})
+            latest = self.catalog.get("firmware_latest", {}).get(equipment.get("gateway_model", ""))
+            if not latest or _version(equipment.get("firmware", "0")) >= _version(latest):
+                raise SimError("Your gateway is already up to date.")
+            old = equipment.get("firmware")
+            equipment["firmware"] = latest
+        return {
+            "scheduled": True,
+            "from_version": old,
+            "to_version": latest,
+            "when": "Tonight between 2 and 4 AM, so it won't interrupt you",
+        }
 
     def _apply_mobile_free_year(self, c: dict[str, Any]) -> bool:
         """Add the free Unlimited line (new line if they have no mobile). Returns True if a line was added."""

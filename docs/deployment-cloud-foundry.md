@@ -11,7 +11,7 @@ make env          # if you don't have a .env yet
 make cf-secrets   # creates the user-provided service "sales-assistant-secrets" from .env
 ```
 
-`make cf-secrets` stores only secret and endpoint values (see `KEYS` in `scripts/cf-secrets.sh`) and passes them through a temporary 0600 file, not the command line.
+`make cf-secrets` stores only secret and endpoint values (including the new `OAUTH_SIGNING_SECRET`) (see `KEYS` in `scripts/cf-secrets.sh`) and passes them through a temporary 0600 file, not the command line.
 
 ## Every deploy
 

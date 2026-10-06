@@ -161,6 +161,9 @@ class Settings:
 
     # Handoff + sessions
     handoff_secret: str = ""
+    oauth_signing_secret: str = ""
+    oauth_required: bool = True
+    oauth_token_ttl_s: int = 1800
     handoff_ttl_s: int = 300
     session_ttl_s: int = 7200
     max_sessions: int = 500
@@ -209,10 +212,15 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
     local = app_env in ("local", "test")
     mcp_token = get("MCP_SERVER_TOKEN") or ""
     handoff_secret = get("HANDOFF_SECRET") or ""
+    oauth_secret = get("OAUTH_SIGNING_SECRET") or ""
     if not local:
         missing = [
             name
-            for name, value in (("MCP_SERVER_TOKEN", mcp_token), ("HANDOFF_SECRET", handoff_secret))
+            for name, value in (
+                ("MCP_SERVER_TOKEN", mcp_token),
+                ("HANDOFF_SECRET", handoff_secret),
+                ("OAUTH_SIGNING_SECRET", oauth_secret),
+            )
             if len(value) < 32
         ]
         if missing:
@@ -227,6 +235,8 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
             log.warning("MCP_SERVER_TOKEN not set; generated an ephemeral token for this run")
         if not handoff_secret:
             handoff_secret = secrets.token_urlsafe(32)
+        if not oauth_secret:
+            oauth_secret = secrets.token_urlsafe(32)
 
     settings = Settings(
         app_env=app_env,  # type: ignore[arg-type]
@@ -259,6 +269,9 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         live_fallback_to_sim=_bool(get("LIVE_FALLBACK_TO_SIM"), True),
         data_source_override=override,  # type: ignore[arg-type]
         handoff_secret=handoff_secret,
+        oauth_signing_secret=oauth_secret,
+        oauth_required=_bool(get("OAUTH_REQUIRED"), True),
+        oauth_token_ttl_s=_int(get("OAUTH_TOKEN_TTL_S"), 1800),
         handoff_ttl_s=_int(get("HANDOFF_TTL_S"), 300),
         session_ttl_s=_int(get("SESSION_TTL_S"), 7200),
         max_sessions=_int(get("MAX_SESSIONS"), 500),

@@ -23,6 +23,7 @@ function Details({ details }: { details: Json }) {
       rows.push([hasPromo ? `New monthly, first ${String(promo!.months)} months` : "New monthly", money(details.new_monthly_price)!]);
     else if (money(details.monthly_price)) rows.push(["Monthly price", money(details.monthly_price)!]);
     if (hasPromo && money(details.monthly_price)) rows.push(["After the promo", money(details.monthly_price)!]);
+    if (money(details.price_if_unchanged)) rows.push(["Without this change", money(details.price_if_unchanged)!]);
   }
   if (money(details.due_today)) rows.push(["Due today", money(details.due_today)!]);
   const amount = money(details.amount);

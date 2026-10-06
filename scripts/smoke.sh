@@ -23,12 +23,20 @@ TOKEN="$("${CURL[@]}" -X POST "$BASE_URL/api/handoff" -H 'Content-Type: applicat
   -d '{"query":"why does my home internet keep dropping"}' | json "['token']")"
 [[ -n "$TOKEN" ]] && pass "search handoff matched a scenario" || fail "handoff"
 
+ACCESS="$(python3 scripts/oauth_signin.py "$BASE_URL" gateway-fault "${BASIC_AUTH:-}")" \
+  && pass "signed in through OAuth (authorization code + PKCE)" || fail "OAuth sign-in"
+
+NOAUTH="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/sessions" -H 'Content-Type: application/json' \
+  ${BASIC_AUTH:+-u "$BASIC_AUTH"} -d '{"handoff_token":"xxxxxxxxxxxx"}')"
+[[ "$NOAUTH" == "401" ]] && pass "chat sessions require sign-in" || fail "session without sign-in returned $NOAUTH"
+
 SID="$("${CURL[@]}" -X POST "$BASE_URL/api/sessions" -H 'Content-Type: application/json' \
-  -d "{\"handoff_token\":\"$TOKEN\"}" | json "['session_id']")"
+  -H "Authorization: Bearer $ACCESS" -d "{\"handoff_token\":\"$TOKEN\"}" | json "['session_id']")"
 pass "session created"
 
 STREAM="$("${CURL[@]}" -N -X POST "$BASE_URL/api/sessions/$SID/turn" -H 'Content-Type: application/json' -d '{"kickoff":true}')"
 grep -q 'event: tool_result' <<<"$STREAM" && pass "assistant called MCP tools" || fail "no tool calls in stream"
+grep -q 'get_account_checkup' <<<"$STREAM" && pass "account checkup ran after sign-in" || fail "no account checkup"
 grep -q 'event: done' <<<"$STREAM" && pass "stream completed" || fail "stream incomplete"
 if grep -q 'event: error' <<<"$STREAM"; then fail "stream reported an error (check LLM settings)"; fi
 

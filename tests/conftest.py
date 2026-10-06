@@ -49,10 +49,25 @@ def parse_sse(text: str) -> list[dict[str, Any]]:
     return events
 
 
-def start_session(c: TestClient, scenario_id: str) -> str:
+FULL_SCOPE = "account:read account:manage"
+
+
+def sign_in(c: TestClient, scenario_id: str, scope: str = FULL_SCOPE) -> str:
+    """Issue an access token for the scenario's customer (the full OAuth flow is tested in test_oauth.py)."""
+    ctx = c.app.state.ctx
+    customer = ctx.scenarios[scenario_id].customer
+    token, _ = ctx.idp.issue_token(str(customer["id"]), str(customer["first_name"]), scope)
+    return token
+
+
+def start_session(c: TestClient, scenario_id: str, scope: str = FULL_SCOPE) -> str:
     handoff = c.post("/api/handoff", json={"scenario_id": scenario_id})
     assert handoff.status_code == 200, handoff.text
-    created = c.post("/api/sessions", json={"handoff_token": handoff.json()["token"]})
+    created = c.post(
+        "/api/sessions",
+        json={"handoff_token": handoff.json()["token"]},
+        headers={"Authorization": f"Bearer {sign_in(c, scenario_id, scope)}"},
+    )
     assert created.status_code == 200, created.text
     return created.json()["session_id"]
 

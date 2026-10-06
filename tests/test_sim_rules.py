@@ -144,3 +144,45 @@ def test_storm_pass_once_and_only_with_alert(store: SimStore) -> None:
         store.activate_storm_pass("LUM-7007")
     with pytest.raises(SimError):
         store.activate_storm_pass("LUM-3003")  # no alert, no mobile
+
+
+# ------------------------------------------------------------ account checkup
+def test_checkup_finds_good_and_bad(store: SimStore) -> None:
+    result = store.account_checkup("LUM-9100")
+    ids = {a["id"] for a in result["attention"]}
+    assert {"overpaying", "promo_ending", "autopay", "firmware", "card_expiring", "unused-tv-box-legacy"} <= ids
+    assert "No outages in your area" in result["good"]
+    assert result["summary"]["potential_monthly_savings"] == 30.0
+    severities = [a["severity"] for a in result["attention"]]
+    assert severities == sorted(severities, key=["high", "medium", "low", "info"].index)
+
+
+def test_healthy_account_has_mostly_good_news(store: SimStore) -> None:
+    result = store.account_checkup("LUM-6006")  # streaming household, no billing issues
+    assert not [a for a in result["attention"] if a["severity"] == "high"]
+    assert result["good"]
+
+
+def test_checkup_fixes_are_idempotent_and_safe(store: SimStore) -> None:
+    assert store.enroll_autopay("LUM-9100")["monthly_discount"] == 5.0
+    with pytest.raises(SimError):
+        store.enroll_autopay("LUM-9100")
+    assert store.return_unused_equipment("LUM-9100", "tv-box-legacy")["monthly_fee_removed"] == 10.0
+    with pytest.raises(SimError):
+        store.return_unused_equipment("LUM-9100", "tv-box-legacy")
+    assert store.update_gateway_firmware("LUM-9100")["to_version"] == "6.4.0"
+    with pytest.raises(SimError):
+        store.update_gateway_firmware("LUM-9100")
+    ids = {a["id"] for a in store.account_checkup("LUM-9100")["attention"]}
+    assert not ids & {"autopay", "firmware", "unused-tv-box-legacy"}
+
+
+def test_right_sizing_offer_and_switch(store: SimStore) -> None:
+    offers = store.offers("LUM-9100", "save")["offers"]
+    pick = next(o for o in offers if o["recommended"])
+    assert pick["plan_id"] == "plus-500" and pick["monthly_savings"] == 15.0
+    quote = store.preview_order("LUM-9100", pick["offer_id"])
+    assert quote["current_monthly_price"] == 70.0 and quote["price_if_unchanged"] == 85.0
+    order = store.submit_order("LUM-9100", pick["offer_id"])
+    assert order["type"] == "plan_change" and order["monthly_savings"] == 15.0
+    assert store.customer_profile("LUM-9100")["plan"]["id"] == "plus-500"

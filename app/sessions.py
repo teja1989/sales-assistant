@@ -40,6 +40,8 @@ class Session:
     pending: dict[str, PendingAction] = field(default_factory=dict)
     offers_seen: dict[str, dict[str, Any]] = field(default_factory=dict)
     previews: dict[str, dict[str, Any]] = field(default_factory=dict)
+    scopes: frozenset[str] = frozenset({"account:read", "account:manage"})
+    token_jti: str | None = None
     verified_amounts: set[str] = field(default_factory=set)
     flags: set[str] = field(default_factory=set)
     created_at: float = field(default_factory=time.time)
@@ -93,6 +95,13 @@ class SessionStore:
                 return None
             session.last_seen = time.time()
             return session
+
+    def remove(self, session_id: str) -> Session | None:
+        with self._lock:
+            session = self._sessions.pop(session_id, None)
+        if session is not None and self.on_evict:
+            self.on_evict(session)
+        return session
 
     def _evict_locked(self) -> list[Session]:
         now = time.time()

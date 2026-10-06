@@ -18,6 +18,10 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 | Unauthenticated MCP access | `/mcp` requires `Authorization: Bearer MCP_SERVER_TOKEN` (constant-time compare); optional Host allowlist (DNS-rebinding protection) | `security.BearerTokenMiddleware`, `MCP_ALLOWED_HOSTS` |
 | Handoff link replay or forgery | HS256 JWT, pinned algorithm, `aud`/`iss`/`exp`/`jti` required, 5-minute TTL, single use; no customer data in the URL; removed from the address bar on load | `handoff.py`, `Chat.tsx` |
 | XSS from model output | UI renders markdown into React elements, never `innerHTML`; strict CSP (`script-src 'self'`, `frame-ancestors 'none'`) | `markdown.tsx`, `security.py` |
+| Unauthenticated account access | Chat sessions require an OAuth access token (HS256, `iss`/`aud`/`exp`/`jti` required, 30-minute TTL) from the authorization-code + PKCE flow; the token's subject decides whose account is loaded, never the URL or scenario | `oauth.py`, `main.api_create_session` |
+| OAuth code theft or misuse | Registered client only; redirect URI must be same-origin `/chat/callback` (no open redirect); S256 PKCE required; codes single-use, 60-second TTL, burned even on failed exchange; consent form parameters are signed so they can't be tampered with | `oauth.py` |
+| Acting beyond granted permission | `account:manage` is optional at consent; without it every action tool is refused in code and the model is told it's view-only | `orchestrator._handle_calls`, `main.api_create_session` |
+| Lingering access | Disconnect revokes the token, ends the session and deletes its simulated data; revoked tokens can't open new sessions | `main.api_disconnect`, `oauth.revoke` |
 | Secrets in access logs | Session ids and handoff tokens are masked in uvicorn access logs and app logs | `logging_setup.AccessLogFilter`, `mask_path` |
 | Handoff token in proxy/router logs | Token travels in the URL fragment (`/chat#ctx=`), which browsers never send to servers | `Search.tsx`, `Chat.tsx` |
 | Over-sharing customer data | Identifiers and contact/identity fields are stripped from tool results before they reach the browser or the model | `guardrails.redact` |
@@ -30,7 +34,7 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 
 ## Known gaps (accepted for a prototype)
 
-- **No end-user authentication.** The customer is simulated. Production needs real login and account linking, plus authorization in the backing APIs, not just in this app.
+- **Simulated sign-in.** The identity provider is a mock: no passwords, demo accounts only, in-memory codes and revocations. The protocol is real, so production swaps in the company IdP (and validates its tokens via JWKS) without changing the chat flow. The backing APIs must also enforce the token's subject and scopes, not just this app.
 - **Session ids are bearer secrets** (random, 192-bit) held in browser memory. No CSRF token is needed because the API takes JSON bodies and no cookies, but add one if you introduce cookie auth.
 - **In-memory state**: rate-limit buckets, sessions and handoff replay protection are per instance.
 - **Static bearer token for `/mcp`.** Fine for a demo. For production, use OAuth 2.1 or your gateway's auth (the MCP SDK supports a token verifier).

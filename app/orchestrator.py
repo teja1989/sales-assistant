@@ -37,6 +37,9 @@ log = logging.getLogger(__name__)
 
 Event = dict[str, Any]
 
+CHECKUP_TOOL = "get_account_checkup"
+MANAGE_SCOPE = "account:manage"
+
 
 class Orchestrator:
     def __init__(
@@ -51,7 +54,10 @@ class Orchestrator:
     # --------------------------------------------------------------- helpers
     def _specs(self, session: Session) -> dict[str, ToolSpec]:
         specs = self.gateway.specs
-        return {name: specs[name] for name in session.scenario.tools if name in specs}
+        names = list(session.scenario.tools)
+        if CHECKUP_TOOL in specs and CHECKUP_TOOL not in names:
+            names.append(CHECKUP_TOOL)  # every signed-in customer gets the account checkup
+        return {name: specs[name] for name in names if name in specs}
 
     def tool_schemas(self, session: Session) -> list[dict[str, Any]]:
         return [spec.llm_schema() for spec in self._specs(session).values()]
@@ -78,6 +84,12 @@ class Orchestrator:
             amount = self.catalog.get("credits", {}).get("outage_credit")
             details = {"amount": amount} if amount is not None else {}
             return "Add an outage service credit to your next bill.", details
+        if tool == "enroll_autopay":
+            return "Turn on autopay and paperless billing with your saved payment method.", {}
+        if tool == "return_unused_equipment":
+            return "Start a free return for equipment you no longer use and stop its monthly fee.", {}
+        if tool == "update_gateway_firmware":
+            return "Install the latest gateway software overnight, between 2 and 4 AM.", {}
         if tool == "activate_storm_data_pass":
             return "Free unlimited mobile data on all your lines for the next 48 hours.", {"amount": 0.0}
         if tool == "submit_upgrade_order":
@@ -93,6 +105,7 @@ class Orchestrator:
                     "promo": offer.get("promo"),
                     "current_monthly_price": quote.get("current_monthly_price"),
                     "new_monthly_price": quote.get("new_monthly_price"),
+                    "price_if_unchanged": quote.get("price_if_unchanged"),
                     "due_today": quote.get("due_today"),
                     "full_price": offer.get("full_price"),
                     "trade_in_credit": offer.get("trade_in_credit"),
@@ -104,7 +117,7 @@ class Orchestrator:
                 if v is not None
             }
             kind = offer.get("type")
-            verb = "Add" if kind == "equipment" else "Order" if kind == "device" else "Upgrade to"
+            verb = {"equipment": "Add", "device": "Order", "plan_change": "Switch to"}.get(kind or "", "Upgrade to")
             return f"{verb} {offer.get('name', 'the selected offer')}.", details
         return "Run this action on your account.", {}
 
@@ -161,6 +174,8 @@ class Orchestrator:
                 async for event in self._handle_confirmation(session, confirmation):
                     yield event
             elif kickoff:
+                async for event in self._proactive_checkup(session):
+                    yield event
                 session.messages.append({"role": "user", "content": KICKOFF_MESSAGE})
             elif user_text is not None:
                 session.messages.append({"role": "user", "content": user_text})
@@ -178,6 +193,32 @@ class Orchestrator:
             log.exception("Unexpected orchestrator failure")
             yield {"type": "error", "code": "internal", "message": "Something went wrong on our side."}
         yield {"type": "done", "pending_actions": list(session.pending)}
+
+    async def _proactive_checkup(self, session: Session) -> AsyncIterator[Event]:
+        """Right after sign-in, review the account and put the result in front of the customer and the model."""
+        specs = self._specs(session)
+        spec = specs.get(CHECKUP_TOOL)
+        if spec is None:
+            return
+        call_id = f"call_{secrets.token_hex(6)}"
+        yield {
+            "type": "tool_start",
+            "call_id": call_id,
+            "tool": spec.name,
+            "title": spec.title,
+            "source": self._source(session, spec.name),
+        }
+        outcome = await self._execute(session, spec, {})
+        self._record(session, outcome)
+        yield self._result_event(call_id, spec, outcome)
+        session.messages.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": call_id, "type": "function", "function": {"name": spec.name, "arguments": "{}"}}],
+            }
+        )
+        session.messages.append({"role": "tool", "tool_call_id": call_id, "content": truncate_for_model(outcome.data)})
 
     async def _handle_confirmation(self, session: Session, confirmation: dict[str, Any]) -> AsyncIterator[Event]:
         action_id = str(confirmation.get("action_id", ""))
@@ -289,6 +330,22 @@ class Orchestrator:
                 continue
             if spec.read_only:
                 reads.append((call, spec, args))
+                continue
+            if MANAGE_SCOPE not in session.scopes:
+                # The customer granted view-only access at sign-in: never act, even if the model tries.
+                self.metrics.guardrail(session.id, "scope_missing")
+                results[call.id] = json.dumps(
+                    {
+                        "error": "permission_not_granted",
+                        "detail": "The customer allowed view-only access. Explain what you would do and how they "
+                        "can do it themselves or reconnect with permission to make changes.",
+                    }
+                )
+                yield {
+                    "type": "notice",
+                    "message": "Tidelink has view-only access, so it can't make changes. "
+                    "Reconnect your account with 'make changes' allowed to let it help.",
+                }
                 continue
             # Action tool -> needs explicit customer confirmation.
             if spec.name == "submit_upgrade_order" and args.get("offer_id") not in session.offers_seen:

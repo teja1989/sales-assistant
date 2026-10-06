@@ -135,7 +135,7 @@ class RateLimitMiddleware:
         self.buckets: dict[str, tuple[float, float]] = {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and scope["method"] == "POST" and scope["path"].startswith("/api/"):
+        if scope["type"] == "http" and scope["method"] == "POST" and scope["path"].startswith(("/api/", "/oauth/")):
             ip = client_ip(scope)
             now = time.monotonic()
             tokens, last = self.buckets.get(ip, (float(self.capacity), now))
@@ -159,7 +159,7 @@ class BodySizeLimitMiddleware:
         self.max_bytes = max_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or not scope["path"].startswith("/api/"):
+        if scope["type"] != "http" or not scope["path"].startswith(("/api/", "/oauth/")):
             await self.app(scope, receive, send)
             return
         length = _header(scope, b"content-length")

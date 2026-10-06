@@ -183,6 +183,59 @@ function Alerts({ data }: { data: Json }) {
   );
 }
 
+const CATEGORY_LABEL: Record<string, string> = {
+  billing: "Billing",
+  service: "Service",
+  plan: "Plan",
+  mobile: "Mobile",
+};
+
+function Checkup({ data }: { data: Json }) {
+  const good = (Array.isArray(data.good) ? data.good : []) as string[];
+  const attention = (Array.isArray(data.attention) ? data.attention : []) as Json[];
+  const summary = obj(data.summary);
+  return (
+    <div className="tool-body checkup">
+      <div className="checkup-col">
+        <p className="checkup-head checkup-good">Looking good</p>
+        <ul>
+          {good.map((g) => (
+            <li key={g}>
+              <span className="tick" aria-hidden="true">✓</span>
+              {g}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="checkup-col">
+        <p className="checkup-head checkup-attn">Needs attention</p>
+        {attention.length === 0 ? (
+          <p className="tool-summary">Nothing right now.</p>
+        ) : (
+          <ul>
+            {attention.map((a) => (
+              <li key={str(a.id)} className={`sev sev-${str(a.severity)}`}>
+                <span className="sev-dot" aria-hidden="true" />
+                <span>
+                  <span className="attn-title">{str(a.title)}</span>
+                  <span className="attn-meta">
+                    {CATEGORY_LABEL[str(a.category)] ?? str(a.category)}
+                    {typeof a.monthly_savings === "number" ? `, save ${money(a.monthly_savings)}/mo` : ""}
+                    {typeof a.monthly_increase === "number" ? `, +${money(a.monthly_increase)}/mo if unchanged` : ""}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {typeof summary.potential_monthly_savings === "number" && summary.potential_monthly_savings > 0 ? (
+        <p className="checkup-savings">Potential savings: {money(summary.potential_monthly_savings)}/month</p>
+      ) : null}
+    </div>
+  );
+}
+
 function Preview({ data }: { data: Json }) {
   const items = (Array.isArray(data.line_items) ? data.line_items : []) as Json[];
   const benefits = (Array.isArray(data.included_benefits) ? data.included_benefits : []) as string[];
@@ -246,6 +299,24 @@ function Result({ tool, data }: { tool: string; data: Json }) {
       </>
     );
   }
+  if (tool === "enroll_autopay")
+    return (
+      <p className="tool-summary">
+        Autopay and paperless on. {money(data.monthly_discount)}/month off from your next bill.
+      </p>
+    );
+  if (tool === "return_unused_equipment")
+    return (
+      <p className="tool-summary">
+        Return started for the {str(data.item)}; {money(data.monthly_fee_removed)}/month removed.
+      </p>
+    );
+  if (tool === "update_gateway_firmware")
+    return (
+      <p className="tool-summary">
+        Update to {str(data.to_version)} scheduled: {str(data.when).toLowerCase()}.
+      </p>
+    );
   if (tool === "activate_storm_data_pass")
     return (
       <p className="tool-summary">
@@ -313,6 +384,8 @@ export function ToolCard({ item }: { item: ToolItem }) {
           <Alerts data={data} />
         ) : item.tool === "preview_order" ? (
           <Preview data={data} />
+        ) : item.tool === "get_account_checkup" ? (
+          <Checkup data={data} />
         ) : (
           <Result tool={item.tool} data={data} />
         ))}

@@ -83,6 +83,16 @@ trade_in:
 credits:
   outage_credit: 10.00
 
+billing:
+  autopay_paperless_discount: 5.00
+  card_expiry_warning_days: 60
+  promo_ending_warning_days: 30
+
+# Latest gateway firmware per model (older versions get a "Gateway update available" item).
+firmware_latest:
+  "LX-6 Wi-Fi 6 Gateway": "6.4.0"
+  "LX-7 Wi-Fi 6E Gateway": "7.0.4"
+
 technician:
   first_available: "Tomorrow, 8:00-10:00 AM"
   visit_fee: 0.00

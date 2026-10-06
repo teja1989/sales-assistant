@@ -434,7 +434,7 @@ a {
 }
 
 .trace-toggle {
-  margin-left: auto;
+  margin-left: 12px;
   padding: 6px 14px;
   font-size: 0.9rem;
 }
@@ -1360,6 +1360,151 @@ a {
 .event-fault_detected .event-kind,
 .event-tool_error .event-kind {
   color: var(--fault);
+}
+
+/* ---------- account linking + checkup ---------- */
+.msg-tool.msg-tool-wide {
+  width: min(92%, 660px);
+}
+
+.link-panel {
+  max-width: 560px;
+  margin: 8vh auto;
+  padding: 0 24px;
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+}
+
+.link-panel h1 {
+  font-size: 1.8rem;
+}
+
+.link-panel .lede {
+  margin: 0;
+}
+
+.link-points {
+  margin: 4px 0 8px;
+  padding-left: 1.1em;
+  color: var(--ink-soft);
+  display: grid;
+  gap: 6px;
+}
+
+.connected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.connected-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.link-button {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--teal-deep);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.checkup {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 8px 18px;
+}
+
+.checkup ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.checkup li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.checkup-head {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.checkup-good {
+  color: var(--ok);
+}
+
+.checkup-attn {
+  color: #8a5a12;
+}
+
+.tick {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.sev-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 6px;
+  background: var(--line);
+}
+
+.sev-high .sev-dot {
+  background: var(--fault);
+}
+
+.sev-medium .sev-dot {
+  background: var(--amber);
+}
+
+.sev-low .sev-dot {
+  background: var(--teal);
+}
+
+.attn-title {
+  display: block;
+  font-weight: 600;
+}
+
+.attn-meta {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.checkup-savings {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  font-weight: 700;
+  color: var(--teal-deep);
+}
+
+@media (max-width: 560px) {
+  .checkup {
+    grid-template-columns: 1fr;
+  }
+
+  .connected span:not(.connected-dot) {
+    display: none;
+  }
 }
 
 /* ---------- motion ---------- */

@@ -28,3 +28,5 @@ ignore = [
 # Prompt and demo-dialogue text reads better unwrapped.
 "app/prompts.py" = ["E501"]
 "app/llm/mock.py" = ["E501"]
+# Inline HTML templates for the mock sign-in page.
+"app/oauth.py" = ["E501", "S608"]
