@@ -1,10 +1,6 @@
 """Azure OpenAI chat client, using the official SDK (`openai` package, AsyncAzureOpenAI).
 
-Same code locally and on Cloud Foundry:
-* local: the SDK calls AZURE_OPENAI_ENDPOINT directly;
-* CF:    the bound proxy service sets HTTPS_PROXY, which the SDK's HTTP client honours
-         automatically (no app setting needed).
-
+Same code and settings locally and on Cloud Foundry: the SDK calls AZURE_OPENAI_ENDPOINT directly.
 The SDK requests  {endpoint}/openai/deployments/{deployment}/chat/completions?api-version=...
 with the `api-key` header. Streamed chunks are turned into the provider-neutral events
 the orchestrator uses (text deltas, then one TurnComplete with any tool calls).

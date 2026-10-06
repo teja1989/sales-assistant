@@ -75,7 +75,7 @@ The MCP endpoint runs **stateless with JSON responses**, so any app instance can
 
 | To change | Edit |
 |---|---|
-| Model endpoint | `.env` / secrets service (`AZURE_OPENAI_*`); CF proxy via bound service |
+| Model endpoint | `AZURE_OPENAI_*` in `.env` (local) or `cf set-env` (CF) |
 | Scenario behaviour | `scenarios/*.yaml` |
 | Prices, plans, promo, mobile bundle, devices, trade-in | `data/catalog.yaml` |
 | A tool's contract | `app/mcp_server.py` (+ `app/sim.py` for simulated behaviour) |

@@ -62,7 +62,7 @@ typecheck-web: ## Type-check the React app
 
 check: lint test typecheck-web build-web ## Everything CI runs
 
-llm-check: ## Check Azure OpenAI answers and can call tools (shows the proxy in effect)
+llm-check: ## Check Azure OpenAI answers and can call tools
 	$(BIN)/python -m app.llm_check
 
 smoke: ## Smoke-test a running app (BASE_URL=... to target Cloud Foundry)

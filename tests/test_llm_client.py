@@ -202,15 +202,3 @@ def test_missing_sdk_gives_a_clear_error(monkeypatch) -> None:
     monkeypatch.setattr(builtins, "__import__", no_openai)
     with pytest.raises(ConfigError, match="pip install"):
         AzureOpenAIClient(make_settings(**AZURE))
-
-
-def test_proxy_detection(monkeypatch) -> None:
-    from app.llm_check import _proxy_in_effect
-
-    for var in ("HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"):
-        monkeypatch.delenv(var, raising=False)
-    assert _proxy_in_effect("https://demo.openai.azure.com") == "none (direct)"
-    monkeypatch.setenv("HTTPS_PROXY", "http://user:pw@proxy.corp:8080")
-    assert _proxy_in_effect("https://demo.openai.azure.com") == "HTTPS_PROXY proxy.corp:8080"  # no credentials
-    monkeypatch.setenv("NO_PROXY", "localhost,.azure.com")
-    assert "NO_PROXY" in _proxy_in_effect("https://demo.openai.azure.com")

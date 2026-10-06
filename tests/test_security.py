@@ -138,7 +138,7 @@ def test_pii_masking() -> None:
     assert "jane@" not in text and "555-0134" not in text and "4111" not in text and "abcdefghijklmnop" not in text
 
 
-# ------------------------------------------------- /mcp auth switch, LLM proxy
+# ------------------------------------------------- /mcp auth switch, config
 def test_mcp_open_when_auth_disabled() -> None:
     settings = make_settings(MCP_AUTH_REQUIRED="false")
     assert settings.mcp_server_token == ""

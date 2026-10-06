@@ -47,4 +47,4 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 1. Put the app behind corporate SSO (CF route service) or set `DEMO_BASIC_AUTH_*`.
 2. Turn `/mcp` auth on (`MCP_AUTH_REQUIRED=true`) with a 32+ char `MCP_SERVER_TOKEN` set via `cf set-env`, never in the manifest.
 3. With `LIVE_MCP_URL` set, actions go live too: use test accounts in `live_customer_id`, or keep action tools off the live server.
-4. Review the model proxy's and Azure OpenAI's content filters and data-retention settings for customer data.
+4. Review Azure OpenAI's content filters and data-retention settings for customer data.

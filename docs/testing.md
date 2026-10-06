@@ -18,7 +18,7 @@ make smoke          # against a running app; BASE_URL=https://... for Cloud Foun
 | `tests/test_sim_rules.py` | Business rules: no upsell while broken, right-sized recommendations, honest "you don't need it", credit once, idempotent orders, free mobile year on 800+, trade-in and valued-customer bonus, device orders, storm pass once |
 | `tests/test_mcp_contract.py` | Tool inventory, read/action classification, `customer_id` hidden from the model, live-first routing with simulator fallback (missing tool, live error, outage), scenario validation |
 | `tests/test_oauth.py` | Full authorization-code + PKCE flow; wrong verifier, code reuse, burned codes, redirect-URI mismatch, foreign redirect URIs, plain PKCE, unknown client/scope, tampered consent, cancel; sessions need valid tokens; identity from token wins; view-only blocks actions; disconnect and revocation; log masking |
-| `tests/test_llm_client.py` | Azure SDK client: arguments passed to `chat.completions.create` (deployment, stream, tools), streamed chunks to events including split tool calls, error mapping without key leakage (401, timeout, certificate, connection), clear error if the SDK is missing, proxy detection |
+| `tests/test_llm_client.py` | Azure SDK client: arguments passed to `chat.completions.create` (deployment, stream, tools), streamed chunks to events including split tool calls, error mapping without key leakage (401, timeout, certificate, connection), clear error if the SDK is missing |
 
 ## Testing with the real model
 

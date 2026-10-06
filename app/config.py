@@ -3,7 +3,6 @@
 The settings that matter (see .env.example); the same names locally and on Cloud Foundry:
     AZURE_OPENAI_ENDPOINT / _API_KEY / _DEPLOYMENT / _API_VERSION
                     Azure OpenAI via the official SDK (empty endpoint = offline mock model).
-                    On CF the bound proxy service sets HTTPS_PROXY, which the SDK uses automatically.
     LIVE_MCP_URL    live MCP server for real data (empty = simulator for everything)
     LIVE_MCP_TOKEN  optional token for it (sent as Authorization: Bearer)
 Everything else has a sensible default; the optional knobs are listed in docs/configuration.md.

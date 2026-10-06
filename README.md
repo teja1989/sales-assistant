@@ -45,7 +45,7 @@ LIVE_MCP_URL=https://<api-host>/mcp                          # optional; live da
 LIVE_MCP_TOKEN=<token>                                       # optional
 ```
 
-Locally the app calls Azure directly; on Cloud Foundry the same values are used and calls go through your bound proxy service (`HTTPS_PROXY`). See [docs/configuration.md](docs/configuration.md). Check the model with `make llm-check` (one plain request and one tool-calling request), then `make dev` (auto-reload for Python and the UI) or `make run`.
+The app calls Azure directly, locally and on Cloud Foundry (where the same values are set with `cf set-env`). See [docs/configuration.md](docs/configuration.md). Check the model with `make llm-check` (one plain request and one tool-calling request), then `make dev` (auto-reload for Python and the UI) or `make run`.
 
 Demo path: **Home → Start from a search → pick an example → Continue with Tidelink**, then open **Impact** in another tab.
 

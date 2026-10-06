@@ -6,9 +6,6 @@
 #        cf set-env sales-assistant AZURE_OPENAI_API_VERSION 2024-10-21
 #      They survive later pushes. Keep them OUT of this file (it's in git).
 #   2. make cf-push   (builds the UI, then cf push)
-#
-# Bind your proxy service (uncomment below, or `cf bind-service`): it sets HTTPS_PROXY,
-# which the Azure OpenAI SDK uses automatically. Local runs call Azure directly.
 ---
 applications:
   - name: sales-assistant
@@ -28,5 +25,3 @@ applications:
       LOG_LEVEL: INFO
       MCP_AUTH_REQUIRED: "false" # /mcp open for now; set "true" and add MCP_SERVER_TOKEN before exposing it
       # MCP_ALLOWED_HOSTS: sales-assistant.apps.example.com
-    # services:
-    #   - <your-proxy-service>   # sets HTTPS_PROXY for calls to Azure OpenAI

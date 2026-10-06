@@ -41,7 +41,7 @@ export function Home({ config }: { config: AppConfig | null }) {
           </div>
           {config && (
             <p className="runtime">
-              Model: <strong>{config.llm === "mock" ? "offline mock" : "via proxy"}</strong>. Data:{" "}
+              Model: <strong>{config.llm === "mock" ? "offline mock" : "Azure OpenAI"}</strong>. Data:{" "}
               <strong>{config.live_configured ? `live MCP (${config.live_host}), simulator as fallback` : "simulator"}</strong>.
             </p>
           )}

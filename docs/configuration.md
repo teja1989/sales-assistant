@@ -1,11 +1,10 @@
 # Configuration
 
-Same settings locally and on Cloud Foundry. The only difference is the network path to Azure:
+Same settings locally and on Cloud Foundry; the app calls Azure OpenAI directly in both.
 
 | | Local | Cloud Foundry |
 |---|---|---|
 | Where settings live | `.env` (`make env` creates it) | app env vars: `cf set-env sales-assistant <NAME> <value>` |
-| Path to Azure OpenAI | direct | through your **proxy service**, bound to the app; it sets `HTTPS_PROXY`, which the SDK uses automatically |
 | Check | `make llm-check` | `cf ssh`, then `python -m app.llm_check` (see deployment doc) |
 
 ## Settings
@@ -19,14 +18,7 @@ Same settings locally and on Cloud Foundry. The only difference is the network p
 | `LIVE_MCP_URL` | Your MCP server for real data, e.g. `https://api.example.com/mcp` | Simulator for every tool |
 | `LIVE_MCP_TOKEN` | Token for it, sent as `Authorization: Bearer <token>` (a value with its own scheme, e.g. `Basic xyz`, is sent as given) | No token sent |
 
-The app uses the official **Azure OpenAI Python SDK** (`openai` package, `AsyncAzureOpenAI`), which requests `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=...` with streaming and tools. `make llm-check` makes a plain call and a tool call (the assistant needs tools) and shows whether a proxy is in effect.
-
-### The proxy on Cloud Foundry
-
-The SDK's HTTP client honours the standard proxy variables (`HTTPS_PROXY`, `NO_PROXY`). Bind the proxy service and nothing else is needed. Two things to know:
-
-- **`HTTPS_PROXY` applies to the app's other outbound HTTPS calls too**, including `LIVE_MCP_URL`. If your MCP server is internal and shouldn't go through the proxy, add its host to `NO_PROXY` (e.g. `cf set-env sales-assistant NO_PROXY api.internal.example`). Otherwise those calls fall back to the simulator if the proxy can't reach it.
-- If the proxy re-signs TLS certificates, calls fail with "TLS certificate not trusted": point `SSL_CERT_FILE` at the CA bundle (PEM).
+The app uses the official **Azure OpenAI Python SDK** (`openai` package, `AsyncAzureOpenAI`), which requests `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=...` with streaming and tools. `make llm-check` makes a plain call and a tool call (the assistant needs tools).
 
 ### How live data is used
 
