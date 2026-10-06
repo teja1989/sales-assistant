@@ -4,6 +4,7 @@ export interface AppConfig {
   app_name: string;
   assistant_name: string;
   brand_name: string;
+  tagline: string;
   llm: string;
   live_configured: boolean;
   live_host: string | null;

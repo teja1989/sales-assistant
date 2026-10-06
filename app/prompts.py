@@ -51,7 +51,7 @@ BASE_PROMPT = """You are {assistant}, the digital support and sales assistant fo
 - Mobile-friendly: at most 4 short bullet points when listing.
 
 ## Context
-- Assistant name: {assistant}. Brand: {brand}.
+- Assistant name: {assistant}. Brand: {brand}. Brand promise: "{tagline}" (reliable, always-on connectivity). Live up to it by fixing problems first; don't recite the slogan.
 - SCENARIO_INTENT: {intent}
 - What the customer searched for: "{query}"
 - Scenario notes: {brief}
@@ -63,6 +63,7 @@ def build_system_prompt(settings: Settings, scenario: Scenario, search_query: st
     return BASE_PROMPT.format(
         assistant=settings.assistant_name,
         brand=settings.brand_name,
+        tagline=settings.tagline,
         intent=scenario.intent,
         query=safe_query,
         brief=scenario.assistant_brief.strip(),

@@ -104,7 +104,7 @@ class SimStore:
         if not mobile or not mobile.get("lines"):
             return None
         return {
-            "plan": mobile.get("plan", "Lumora Unlimited"),
+            "plan": mobile.get("plan", "Tidelink Unlimited"),
             "lines": len(mobile["lines"]),
             "devices": [line.get("device") for line in mobile["lines"]],
             "free_months_remaining": mobile.get("free_months_remaining", 0),
@@ -317,7 +317,7 @@ class SimStore:
                 raise SimError("No active weather alert for this area.")
             lines = (c.get("mobile") or {}).get("lines") or []
             if not lines:
-                raise SimError("The storm data pass is for accounts with Lumora mobile lines.")
+                raise SimError("The storm data pass is for accounts with Tidelink mobile lines.")
             if any(b["type"] == "storm_data_pass" for b in c["benefits"]):
                 raise SimError("The storm data pass is already active.")
             hours = self.catalog["mobile"]["storm_data_pass_hours"]

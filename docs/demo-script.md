@@ -8,7 +8,7 @@ Customers ask AI assistants about their internet before they ever call us. Today
 
 ## 2. Broken, not slow: no upsell (2 min)
 
-1. Home → **Start from a search** → "why does my home internet keep dropping" → **Continue in Lumora Assist**.
+1. Home → **Start from a search** → "why does my home internet keep dropping" → **Continue in Tidelink Assist**.
 2. Point out: no "what's your account number". It greets the customer by name and already knows the question.
 3. Open **MCP trace** (right side): profile, outage and diagnostics ran in parallel, each badged **sim** or **live** with latency.
 4. Diagnosis: gateway fault, 7 drops in 24 hours. It proposes a remote reboot. **Nothing happens until the customer confirms.**

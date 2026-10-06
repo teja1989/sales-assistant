@@ -141,13 +141,13 @@ export function Chat({ config }: { config: AppConfig | null }) {
     (i) => i.kind === "confirm" && (i.state !== "pending" || i.tool === "submit_upgrade_order"),
   );
   const tools = items.filter((i): i is Extract<ChatItem, { kind: "tool" }> => i.kind === "tool");
-  const assistant = config?.assistant_name ?? "Lumi";
+  const assistant = config?.assistant_name ?? "Tide";
 
   if (fatal) {
     return (
       <div className="page chat-page">
         <header className="topbar">
-          <BrandMark name={config?.app_name ?? "Lumora Assist"} />
+          <BrandMark name={config?.app_name ?? "Tidelink Assist"} tagline={config?.tagline} />
         </header>
         <main className="empty-state">
           <h1>{fatal}</h1>
@@ -162,7 +162,7 @@ export function Chat({ config }: { config: AppConfig | null }) {
   return (
     <div className="page chat-page">
       <header className="topbar">
-        <BrandMark name={config?.app_name ?? "Lumora Assist"} />
+        <BrandMark name={config?.app_name ?? "Tidelink Assist"} tagline={config?.tagline} />
         <div className="chat-context">
           {session && (
             <>

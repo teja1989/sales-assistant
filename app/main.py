@@ -111,6 +111,7 @@ async def api_config(request: Request) -> Response:
             "app_name": s.app_name,
             "assistant_name": s.assistant_name,
             "brand_name": s.brand_name,
+            "tagline": s.tagline,
             "llm": ctx.llm.name,
             "live_configured": s.live_configured,
             "live_host": urlparse(s.live_mcp_url).hostname if s.live_configured else None,

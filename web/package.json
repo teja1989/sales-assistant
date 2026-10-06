@@ -1,9 +1,9 @@
 {
-  "name": "lumora-assist-web",
+  "name": "tidelink-assist-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "React UI for Lumora Assist (built with esbuild into ../app/static)",
+  "description": "React UI for Tidelink Assist (built with esbuild into ../app/static)",
   "scripts": {
     "build": "node build.mjs",
     "watch": "node build.mjs --watch",

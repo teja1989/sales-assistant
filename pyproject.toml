@@ -1,5 +1,5 @@
 [project]
-name = "lumora-assist"
+name = "tidelink-assist"
 version = "0.1.0"
 description = "MCP-powered support and sales chat assistant prototype"
 requires-python = ">=3.12"

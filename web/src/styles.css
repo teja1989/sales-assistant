@@ -1,4 +1,4 @@
-/* Lumora Assist: cool "signal" palette, system faces only (no external font requests). */
+/* Tidelink Assist: cool "signal" palette, system faces only (no external font requests). */
 :root {
   --mist: #eef2f6;
   --paper: #ffffff;
@@ -102,6 +102,24 @@ a {
 
 .topbar nav a:hover {
   color: var(--ink);
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.brand-tagline {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--teal-deep);
+}
+
+.lede-strong {
+  color: var(--ink);
+  font-weight: 500;
 }
 
 .brand {
@@ -210,11 +228,16 @@ a {
 .home-intro h1 {
   font-size: clamp(2rem, 4vw, 3rem);
   letter-spacing: -0.01em;
-  max-width: 18ch;
+  max-width: 14ch;
+  text-wrap: balance;
 }
 
 .home-intro .lede {
-  margin: 20px 0 28px;
+  margin: 16px 0 0;
+}
+
+.home-intro .home-actions {
+  margin-top: 28px;
 }
 
 .home-actions {
@@ -1310,7 +1333,7 @@ a {
     display: none;
   }
 
-  .brand span {
+  .brand-text {
     display: none;
   }
 

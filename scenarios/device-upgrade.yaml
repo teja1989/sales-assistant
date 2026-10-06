@@ -32,7 +32,7 @@ customer:
   outage: null
   fault: null
   mobile:
-    plan: Lumora Unlimited
+    plan: Tidelink Unlimited
     lines:
       - {line_id: LN-8A01, device: iPhone 15 Pro, device_condition: good}
   line:

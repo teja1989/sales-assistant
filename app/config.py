@@ -124,9 +124,10 @@ def _mapping(value: str | None) -> dict[str, str]:
 @dataclass(frozen=True)
 class Settings:
     app_env: Literal["local", "dev", "prod", "test"] = "local"
-    app_name: str = "Lumora Assist"
-    assistant_name: str = "Lumi"
-    brand_name: str = "Lumora"
+    app_name: str = "Tidelink Assist"
+    assistant_name: str = "Tide"
+    brand_name: str = "Tidelink"
+    tagline: str = "Always on, like the tide."
     log_level: str = "INFO"
 
     # LLM
@@ -229,9 +230,10 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
 
     settings = Settings(
         app_env=app_env,  # type: ignore[arg-type]
-        app_name=get("APP_NAME") or "Lumora Assist",
-        assistant_name=get("ASSISTANT_NAME") or "Lumi",
-        brand_name=get("BRAND_NAME") or "Lumora",
+        app_name=get("APP_NAME") or "Tidelink Assist",
+        assistant_name=get("ASSISTANT_NAME") or "Tide",
+        brand_name=get("BRAND_NAME") or "Tidelink",
+        tagline=get("TAGLINE") or "Always on, like the tide.",
         log_level=(get("LOG_LEVEL") or "INFO").upper(),
         llm_provider=provider,  # type: ignore[arg-type]
         azure_openai_endpoint=(get("AZURE_OPENAI_ENDPOINT") or "").rstrip("/"),

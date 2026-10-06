@@ -1,4 +1,4 @@
-# Lumora Assist developer commands. Run `make` to see them all.
+# Tidelink Assist developer commands. Run `make` to see them all.
 SHELL := /bin/bash
 PY    ?= python3.12
 VENV  := .venv

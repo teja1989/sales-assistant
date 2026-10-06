@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import jwt
 
-AUDIENCE = "lumora-assist"
+AUDIENCE = "tidelink-assist"
 ISSUER = "search-handoff"
 
 

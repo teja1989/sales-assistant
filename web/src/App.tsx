@@ -25,7 +25,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const name = config?.app_name ?? "Lumora Assist";
+    const name = config?.app_name ?? "Tidelink Assist";
     const page = path.startsWith("/chat") ? "Chat" : path.startsWith("/dashboard") ? "Impact" : path.startsWith("/search") ? "Search" : "";
     document.title = page ? `${page} | ${name}` : name;
   }, [path, config]);

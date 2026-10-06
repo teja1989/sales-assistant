@@ -175,7 +175,7 @@ class McpGateway:
         return ToolOutcome(name, "sim", data, is_error, int((time.perf_counter() - started) * 1000), error=error)
 
     def _live_headers(self) -> dict[str, str]:
-        headers = {"User-Agent": "lumora-assist/0.1"}
+        headers = {"User-Agent": "tidelink-assist/0.1"}
         token = self.settings.live_mcp_token
         if token:
             scheme = self.settings.live_mcp_auth_scheme.strip()

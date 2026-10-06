@@ -46,7 +46,7 @@ export function Dashboard({ config }: { config: AppConfig | null }) {
   return (
     <div className="page dash-page">
       <header className="topbar">
-        <BrandMark name={config?.app_name ?? "Lumora Assist"} />
+        <BrandMark name={config?.app_name ?? "Tidelink Assist"} tagline={config?.tagline} />
         <nav>
           <Link to="/search">Search handoff</Link>
           <button

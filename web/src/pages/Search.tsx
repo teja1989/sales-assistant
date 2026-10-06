@@ -37,7 +37,7 @@ export function Search() {
       setMatch({ token: res.token, scenario: res.scenario });
     } catch (err) {
       setError(err instanceof ApiError && err.status === 404
-        ? "No Lumora flow matches that search yet. Try one of the examples below."
+        ? "No Tidelink flow matches that search yet. Try one of the examples below."
         : "Search failed. Check that the app is running and try again.");
     } finally {
       setBusy(false);
@@ -48,7 +48,7 @@ export function Search() {
     <div className="page search-page">
       <div className="sim-banner" role="note">
         Simulated external search assistant. This page stands in for the handoff from a third-party AI assistant.{" "}
-        <Link to="/">Back to Lumora Assist</Link>
+        <Link to="/">Back to Tidelink Assist</Link>
       </div>
 
       <main className="search-main">
@@ -104,15 +104,15 @@ export function Search() {
                 </p>
                 <div className="handoff-card">
                   <div>
-                    <strong>Lumora can check this for you</strong>
-                    <p>Continue in Lumora Assist. Your question comes with you, so there's nothing to repeat.</p>
+                    <strong>Tidelink can check your connection now</strong>
+                    <p>Continue in Tidelink Assist. Your question comes with you, so there's nothing to repeat.</p>
                   </div>
                   <button
                     type="button"
                     className="btn btn-primary"
                     onClick={() => navigate(`/chat#ctx=${encodeURIComponent(match.token)}`)}
                   >
-                    Continue in Lumora Assist
+                    Continue in Tidelink Assist
                   </button>
                 </div>
               </>
