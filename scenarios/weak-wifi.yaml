@@ -18,7 +18,6 @@ tools:
   - get_eligible_offers
   - preview_order
   - submit_upgrade_order
-data_sources: {}
 suggested_replies:
   - "Yes, add the pod"
   - "Wouldn't a faster plan fix it?"

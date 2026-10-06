@@ -17,7 +17,6 @@ tools:
   - get_eligible_offers
   - reboot_gateway
   - apply_service_credit
-data_sources: {}
 suggested_replies:
   - "How long will it take?"
   - "Should I restart my modem?"

@@ -18,8 +18,6 @@ tools:
   - reboot_gateway
   - schedule_technician
 # Per-tool data source. Anything not listed uses the simulator.
-data_sources:
-  get_customer_profile: sim
 suggested_replies:
   - "It happens a few times every evening"
   - "Can you just fix it?"

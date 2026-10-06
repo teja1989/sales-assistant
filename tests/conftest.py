@@ -13,15 +13,16 @@ from app.main import create_app
 
 TEST_ENV = {
     "APP_ENV": "test",
-    "LLM_PROVIDER": "mock",
+    "LLM_PROXY_URL": "",  # offline mock model, whatever a developer's .env says
+    "LLM_PROXY_KEY": "",
     "MOCK_STREAM_DELAY_MS": "0",
+    "MCP_AUTH_REQUIRED": "true",  # most security tests exercise /mcp with auth on
     "MCP_SERVER_TOKEN": "test-mcp-token-0123456789abcdef",
-    "HANDOFF_SECRET": "test-handoff-secret-0123456789abcdef",
     "RATE_LIMIT_PER_MINUTE": "1000",
     "LIVE_MCP_URL": "",
+    "LIVE_MCP_TOKEN": "",
     "DEMO_BASIC_AUTH_USER": "",
     "DEMO_BASIC_AUTH_PASSWORD": "",
-    "DATA_SOURCE_OVERRIDE": "",
 }
 
 

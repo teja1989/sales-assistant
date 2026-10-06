@@ -1,5 +1,12 @@
 """Runtime configuration.
 
+Only four settings matter for a normal run (see .env.example):
+    LLM_PROXY_URL   the URL we POST chat requests to (empty = offline mock model)
+    LLM_PROXY_KEY   optional key for it ("Bearer x" -> Authorization header, else api-key header)
+    LIVE_MCP_URL    live MCP server for real data (empty = simulator for everything)
+    LIVE_MCP_TOKEN  optional token for it (sent as Authorization: Bearer)
+Everything else has a sensible default; the optional knobs are listed in docs/configuration.md.
+
 Values come from (highest priority first):
 1. Process environment variables.
 2. Credentials of a Cloud Foundry user-provided service (VCAP_SERVICES), so
@@ -22,7 +29,7 @@ log = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
-LlmProvider = Literal["mock", "azure_openai", "openai_compatible", "gateway"]
+LlmProvider = Literal["mock", "proxy"]
 DataSource = Literal["sim", "live"]
 
 
@@ -131,44 +138,28 @@ class Settings:
     tagline: str = "Always on, like the tide."
     log_level: str = "INFO"
 
-    # LLM
-    llm_provider: LlmProvider = "mock"
-    azure_openai_endpoint: str = ""
-    azure_openai_api_key: str = ""
-    azure_openai_deployment: str = ""
-    azure_openai_api_version: str = "2024-10-21"
-    openai_compat_base_url: str = ""
-    openai_compat_api_key: str = ""
-    openai_compat_model: str = ""
-    openai_compat_key_header: Literal["authorization", "api-key"] = "authorization"
-    # gateway: one full URL that fronts Azure (e.g. an internal API gateway that adds the key itself)
-    llm_gateway_url: str = ""
-    llm_gateway_key_header: str = ""  # optional, e.g. Ocp-Apim-Subscription-Key; empty = send no key
-    llm_gateway_key: str = ""
-    llm_gateway_model: str = ""  # optional "model" field; empty when the gateway picks the deployment
+    # Model: one URL (an internal proxy in front of Azure OpenAI). Empty = offline mock model.
+    llm_proxy_url: str = ""
+    llm_proxy_key: str = ""
+    llm_ca_bundle: str = ""  # optional PEM file if the proxy uses an internal CA
     llm_temperature: float = 0.2
     llm_max_tokens: int = 700
     llm_max_tokens_param: str = "max_tokens"
     llm_timeout_s: float = 60.0
-    llm_proxy_url: str = ""  # forward HTTP proxy used only for LLM calls (e.g. http://proxy.corp:8080)
-    llm_ca_bundle: str = ""  # extra CA bundle (PEM) for TLS-inspecting proxies or internal gateways
     mock_stream_delay_ms: int = 12
 
     # Our own MCP server (/mcp)
-    mcp_auth_required: bool = True  # false = /mcp open to any client (rate limited); turn on before exposing it
+    mcp_auth_required: bool = False  # true = clients must send Authorization: Bearer MCP_SERVER_TOKEN
     mcp_server_token: str = ""
     mcp_allowed_hosts: list[str] = field(default_factory=list)
 
-    # External ("live") MCP server
+    # Live MCP server: when set, every tool call goes there first, falling back to the simulator.
     live_mcp_url: str = ""
     live_mcp_token: str = ""
-    live_mcp_auth_scheme: str = "Bearer"
     live_mcp_timeout_s: float = 20.0
-    live_tool_map: dict[str, str] = field(default_factory=dict)
-    live_fallback_to_sim: bool = True
-    data_source_override: Literal["", "sim", "live"] = ""
+    live_tool_map: dict[str, str] = field(default_factory=dict)  # optional renames: ours=theirs
 
-    # Handoff + sessions
+    # Handoff + sessions (signing secrets are generated per process; sessions live in memory anyway)
     handoff_secret: str = ""
     oauth_signing_secret: str = ""
     oauth_required: bool = True
@@ -188,8 +179,17 @@ class Settings:
     static_dir: Path = ROOT_DIR / "app" / "static"
 
     @property
+    def llm_provider(self) -> LlmProvider:
+        return "proxy" if self.llm_proxy_url else "mock"
+
+    @property
     def live_configured(self) -> bool:
         return bool(self.live_mcp_url)
+
+    @property
+    def data_source(self) -> DataSource:
+        """Where tool calls go: everything live when a live MCP server is configured."""
+        return "live" if self.live_mcp_url else "sim"
 
     @property
     def is_local(self) -> bool:
@@ -206,47 +206,15 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
     if app_env not in ("local", "dev", "prod", "test"):
         raise ConfigError("APP_ENV must be one of local, dev, prod, test")
 
-    provider = (get("LLM_PROVIDER") or "mock").lower()
-    if provider not in ("mock", "azure_openai", "openai_compatible", "gateway"):
-        raise ConfigError("LLM_PROVIDER must be mock, azure_openai, openai_compatible or gateway")
-
-    override = (get("DATA_SOURCE_OVERRIDE") or "").lower()
-    if override not in ("", "sim", "live"):
-        raise ConfigError("DATA_SOURCE_OVERRIDE must be empty, sim or live")
-
-    key_header = (get("OPENAI_COMPAT_KEY_HEADER") or "authorization").lower()
-    if key_header not in ("authorization", "api-key"):
-        raise ConfigError("OPENAI_COMPAT_KEY_HEADER must be authorization or api-key")
-
-    local = app_env in ("local", "test")
-    mcp_auth = _bool(get("MCP_AUTH_REQUIRED"), True)
+    mcp_auth = _bool(get("MCP_AUTH_REQUIRED"), False)
     mcp_token = (get("MCP_SERVER_TOKEN") or "") if mcp_auth else ""
-    handoff_secret = get("HANDOFF_SECRET") or ""
-    oauth_secret = get("OAUTH_SIGNING_SECRET") or ""
-    if not local:
-        missing = [
-            name
-            for name, value in (
-                *((("MCP_SERVER_TOKEN", mcp_token),) if mcp_auth else ()),
-                ("HANDOFF_SECRET", handoff_secret),
-                ("OAUTH_SIGNING_SECRET", oauth_secret),
-            )
-            if len(value) < 32
-        ]
-        if missing:
-            raise ConfigError(
-                f"{', '.join(missing)} must be set (32+ chars) when APP_ENV={app_env}. "
-                "Bind the secrets user-provided service or set the env vars."
-            )
-    else:
-        # Local convenience: generate ephemeral secrets so the app starts, and say so.
-        if mcp_auth and not mcp_token:
-            mcp_token = secrets.token_urlsafe(32)
-            log.warning("MCP_SERVER_TOKEN not set; generated an ephemeral token for this run")
-        if not handoff_secret:
-            handoff_secret = secrets.token_urlsafe(32)
-        if not oauth_secret:
-            oauth_secret = secrets.token_urlsafe(32)
+    if mcp_auth:
+        if app_env in ("local", "test"):
+            if not mcp_token:
+                mcp_token = secrets.token_urlsafe(32)
+                log.warning("MCP_AUTH_REQUIRED=true but MCP_SERVER_TOKEN not set; generated one for this run")
+        elif len(mcp_token) < 32:
+            raise ConfigError("MCP_AUTH_REQUIRED=true needs MCP_SERVER_TOKEN (32+ chars)")
 
     settings = Settings(
         app_env=app_env,  # type: ignore[arg-type]
@@ -255,38 +223,23 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         brand_name=get("BRAND_NAME") or "",
         tagline=get("TAGLINE") or "Always on, like the tide.",
         log_level=(get("LOG_LEVEL") or "INFO").upper(),
-        llm_provider=provider,  # type: ignore[arg-type]
-        azure_openai_endpoint=(get("AZURE_OPENAI_ENDPOINT") or "").rstrip("/"),
-        azure_openai_api_key=get("AZURE_OPENAI_API_KEY") or "",
-        azure_openai_deployment=get("AZURE_OPENAI_DEPLOYMENT") or "",
-        azure_openai_api_version=get("AZURE_OPENAI_API_VERSION") or "2024-10-21",
-        openai_compat_base_url=(get("OPENAI_COMPAT_BASE_URL") or "").rstrip("/"),
-        openai_compat_api_key=get("OPENAI_COMPAT_API_KEY") or "",
-        openai_compat_model=get("OPENAI_COMPAT_MODEL") or "",
-        openai_compat_key_header=key_header,  # type: ignore[arg-type]
-        llm_gateway_url=_with_scheme((get("LLM_GATEWAY_URL") or "").strip()),
-        llm_gateway_key_header=(get("LLM_GATEWAY_KEY_HEADER") or "").strip(),
-        llm_gateway_key=get("LLM_GATEWAY_KEY") or "",
-        llm_gateway_model=(get("LLM_GATEWAY_MODEL") or "").strip(),
+        llm_proxy_url=_with_scheme((get("LLM_PROXY_URL") or "").strip()),
+        llm_proxy_key=(get("LLM_PROXY_KEY") or "").strip(),
+        llm_ca_bundle=(get("LLM_CA_BUNDLE") or "").strip(),
         llm_temperature=_float(get("LLM_TEMPERATURE"), 0.2),
         llm_max_tokens=_int(get("LLM_MAX_TOKENS"), 700),
         llm_max_tokens_param=get("LLM_MAX_TOKENS_PARAM") or "max_tokens",
         llm_timeout_s=_float(get("LLM_TIMEOUT_S"), 60.0),
-        llm_proxy_url=(get("LLM_PROXY_URL") or "").strip(),
-        llm_ca_bundle=(get("LLM_CA_BUNDLE") or "").strip(),
         mock_stream_delay_ms=_int(get("MOCK_STREAM_DELAY_MS"), 12),
         mcp_auth_required=mcp_auth,
         mcp_server_token=mcp_token,
         mcp_allowed_hosts=_csv(get("MCP_ALLOWED_HOSTS")),
-        live_mcp_url=(get("LIVE_MCP_URL") or "").strip(),
-        live_mcp_token=get("LIVE_MCP_TOKEN") or "",
-        live_mcp_auth_scheme=get("LIVE_MCP_AUTH_SCHEME", "Bearer") or "",
+        live_mcp_url=_with_scheme((get("LIVE_MCP_URL") or "").strip()),
+        live_mcp_token=(get("LIVE_MCP_TOKEN") or "").strip(),
         live_mcp_timeout_s=_float(get("LIVE_MCP_TIMEOUT_S"), 20.0),
         live_tool_map=_mapping(get("LIVE_TOOL_MAP")),
-        live_fallback_to_sim=_bool(get("LIVE_FALLBACK_TO_SIM"), True),
-        data_source_override=override,  # type: ignore[arg-type]
-        handoff_secret=handoff_secret,
-        oauth_signing_secret=oauth_secret,
+        handoff_secret=secrets.token_urlsafe(32),
+        oauth_signing_secret=secrets.token_urlsafe(32),
         oauth_required=_bool(get("OAUTH_REQUIRED"), True),
         oauth_token_ttl_s=_int(get("OAUTH_TOKEN_TTL_S"), 1800),
         handoff_ttl_s=_int(get("HANDOFF_TTL_S"), 300),
@@ -300,64 +253,36 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         scenarios_dir=Path(get("SCENARIOS_DIR") or ROOT_DIR / "scenarios"),
         static_dir=Path(get("STATIC_DIR") or ROOT_DIR / "app" / "static"),
     )
-    _validate_llm(settings)
+    _validate(settings)
     return settings
 
 
-def _validate_llm(s: Settings) -> None:
-    if s.llm_proxy_url:
-        proxy = urlsplit(s.llm_proxy_url)
-        if proxy.scheme not in ("http", "https") or not proxy.hostname:
-            raise ConfigError("LLM_PROXY_URL must look like http://proxy-host:port")
-        if proxy.path not in ("", "/") or proxy.query:
-            raise ConfigError(
-                "LLM_PROXY_URL is for a forward proxy (http://host:port) and must not have a path. "
-                "If this is the URL you POST chat requests to, set LLM_PROVIDER=gateway and LLM_GATEWAY_URL instead."
-            )
+def _validate(s: Settings) -> None:
+    for name, url in (("LLM_PROXY_URL", s.llm_proxy_url), ("LIVE_MCP_URL", s.live_mcp_url)):
+        if url:
+            parts = urlsplit(url)
+            if parts.scheme not in ("http", "https") or not parts.hostname:
+                raise ConfigError(f"{name} must be a full URL, e.g. https://host.example.com/path")
     if s.llm_ca_bundle and not Path(s.llm_ca_bundle).is_file():
         raise ConfigError(f"LLM_CA_BUNDLE file not found: {s.llm_ca_bundle}")
-    if s.llm_provider == "azure_openai":
-        missing = [
-            name
-            for name, value in (
-                ("AZURE_OPENAI_ENDPOINT", s.azure_openai_endpoint),
-                ("AZURE_OPENAI_API_KEY", s.azure_openai_api_key),
-                ("AZURE_OPENAI_DEPLOYMENT", s.azure_openai_deployment),
-            )
-            if not value
-        ]
-        if missing:
-            raise ConfigError(f"LLM_PROVIDER=azure_openai requires {', '.join(missing)}")
-        if not s.azure_openai_endpoint.startswith("https://"):
-            raise ConfigError("AZURE_OPENAI_ENDPOINT must start with https://")
-    elif s.llm_provider == "gateway":
-        if not s.llm_gateway_url:
-            raise ConfigError("LLM_PROVIDER=gateway requires LLM_GATEWAY_URL (the full URL to POST chat requests to)")
-        gw = urlsplit(s.llm_gateway_url)
-        if gw.scheme not in ("http", "https") or not gw.hostname:
-            raise ConfigError("LLM_GATEWAY_URL must be a full URL, e.g. https://gateway.example.com/completions/api")
-        if bool(s.llm_gateway_key_header) != bool(s.llm_gateway_key):
-            raise ConfigError("Set both LLM_GATEWAY_KEY_HEADER and LLM_GATEWAY_KEY, or neither")
-    elif s.llm_provider == "openai_compatible":
-        missing = [
-            name
-            for name, value in (
-                ("OPENAI_COMPAT_BASE_URL", s.openai_compat_base_url),
-                ("OPENAI_COMPAT_API_KEY", s.openai_compat_api_key),
-                ("OPENAI_COMPAT_MODEL", s.openai_compat_model),
-            )
-            if not value
-        ]
-        if missing:
-            raise ConfigError(f"LLM_PROVIDER=openai_compatible requires {', '.join(missing)}")
 
 
-def describe_proxy(url: str) -> str:
-    """Proxy host:port for logs and status, never credentials."""
+def proxy_auth_header(key: str) -> dict[str, str]:
+    """LLM_PROXY_KEY convention: "Bearer <token>" goes in Authorization; anything else in api-key."""
+    if not key:
+        return {}
+    if key.lower().startswith("bearer "):
+        return {"Authorization": key}
+    return {"api-key": key}
+
+
+def display_url(url: str) -> str:
+    """scheme://host[:port]/path for logs and checks: no credentials, no query string."""
     if not url:
         return ""
     parts = urlsplit(url)
-    return f"{parts.hostname}:{parts.port}" if parts.port else str(parts.hostname)
+    port = f":{parts.port}" if parts.port else ""
+    return f"{parts.scheme}://{parts.hostname}{port}{parts.path}"
 
 
 def _with_scheme(url: str) -> str:

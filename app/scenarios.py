@@ -41,7 +41,6 @@ class Scenario(BaseModel):
     match_keywords: list[str] = Field(default_factory=list)
     assistant_brief: str
     tools: list[str]
-    data_sources: dict[str, Literal["sim", "live"]] = Field(default_factory=dict)
     live_customer_id: str | None = None
     suggested_replies: list[str] = Field(default_factory=list)
     customer: dict[str, Any]
@@ -56,18 +55,10 @@ class Scenario(BaseModel):
 
     @model_validator(mode="after")
     def _check(self) -> Scenario:
-        unknown = set(self.data_sources) - set(self.tools)
-        if unknown:
-            raise ValueError(f"data_sources references tools not listed in tools: {sorted(unknown)}")
         for key in ("id", "first_name", "plan_id"):
             if key not in self.customer:
                 raise ValueError(f"customer.{key} is required")
         return self
-
-    def source_for(self, tool: str, override: str = "") -> Literal["sim", "live"]:
-        if override in ("sim", "live"):
-            return override  # type: ignore[return-value]
-        return self.data_sources.get(tool, "sim")
 
     def public_view(self) -> dict[str, Any]:
         """Fields safe to send to the browser (no fixture internals)."""
@@ -79,7 +70,6 @@ class Scenario(BaseModel):
             "intent": self.intent,
             "search_query": self.search_query,
             "suggested_replies": self.suggested_replies,
-            "data_sources": {tool: self.source_for(tool) for tool in self.tools},
         }
 
 

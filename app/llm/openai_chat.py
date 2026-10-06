@@ -1,14 +1,13 @@
-"""Streaming client for Azure OpenAI and any OpenAI-compatible chat-completions endpoint.
+"""Streaming chat-completions client for the model proxy (LLM_PROXY_URL).
+
+POST {LLM_PROXY_URL} exactly as given (its query string is kept) with the standard
+OpenAI chat-completions body (messages, tools, stream). The proxy in front of Azure
+OpenAI picks the deployment, so no model name is sent. Optional LLM_PROXY_KEY:
+"Bearer <token>" goes in Authorization, anything else in the api-key header.
+Streamed (SSE) and non-streamed JSON replies are both accepted.
 
 Implemented directly over HTTP (httpx2, already a dependency of the MCP SDK)
-to keep the dependency surface small and the wire behaviour explicit:
-
-* azure_openai:      POST {endpoint}/openai/deployments/{deployment}/chat/completions?api-version=...
-                     header  api-key: <key>
-* openai_compatible: POST {base_url}/chat/completions   (e.g. Azure AI Foundry /openai/v1)
-* gateway:           POST {LLM_GATEWAY_URL} exactly as given (internal gateway in front of Azure);
-                     optional key header and model; a non-streamed JSON reply is also accepted
-                     header  Authorization: Bearer <key>   or   api-key: <key>
+to keep the dependency surface small and the wire behaviour explicit.
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ from typing import Any
 
 import httpx2
 
-from app.config import Settings, describe_proxy
+from app.config import Settings, proxy_auth_header
 from app.llm.base import LlmError, LlmEvent, TextDelta, ToolCall, TurnComplete
 
 log = logging.getLogger(__name__)
@@ -34,41 +33,13 @@ class OpenAIChatClient:
     def __init__(self, settings: Settings, transport: httpx2.AsyncBaseTransport | None = None) -> None:
         self.settings = settings
         self._transport = transport
-        # Only LLM traffic goes through LLM_PROXY_URL, so live MCP and internal calls are unaffected.
-        # HTTPS through a forward proxy is tunnelled (CONNECT): TLS still ends at the Azure host.
-        self._proxy = settings.llm_proxy_url or None
         self._verify: ssl.SSLContext | bool = (
             ssl.create_default_context(cafile=settings.llm_ca_bundle) if settings.llm_ca_bundle else True
         )
+        self.name = "proxy"
+        self.url = settings.llm_proxy_url
+        self.headers = proxy_auth_header(settings.llm_proxy_key)
         self.last_mode = ""  # "stream" or "json" after a call (shown by make llm-check)
-        self.route = f"via proxy {describe_proxy(settings.llm_proxy_url)}" if settings.llm_proxy_url else "direct"
-        if settings.llm_provider == "azure_openai":
-            self.name = f"azure_openai:{settings.azure_openai_deployment}"
-            self.url = (
-                f"{settings.azure_openai_endpoint}/openai/deployments/"
-                f"{settings.azure_openai_deployment}/chat/completions"
-            )
-            self.params = {"api-version": settings.azure_openai_api_version}
-            self.headers = {"api-key": settings.azure_openai_api_key}
-            self.model: str | None = None
-        elif settings.llm_provider == "gateway":
-            # Full URL used exactly as given (its own query string is kept); key and model are optional.
-            self.name = f"gateway:{settings.llm_gateway_model}" if settings.llm_gateway_model else "gateway"
-            self.url = settings.llm_gateway_url
-            self.params = {}
-            self.headers = (
-                {settings.llm_gateway_key_header: settings.llm_gateway_key} if settings.llm_gateway_key_header else {}
-            )
-            self.model = settings.llm_gateway_model or None
-        else:
-            self.name = f"openai_compatible:{settings.openai_compat_model}"
-            self.url = f"{settings.openai_compat_base_url}/chat/completions"
-            self.params = {}
-            if settings.openai_compat_key_header == "api-key":
-                self.headers = {"api-key": settings.openai_compat_api_key}
-            else:
-                self.headers = {"Authorization": f"Bearer {settings.openai_compat_api_key}"}
-            self.model = settings.openai_compat_model
 
     def _body(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -77,8 +48,6 @@ class OpenAIChatClient:
             "temperature": self.settings.llm_temperature,
             self.settings.llm_max_tokens_param: self.settings.llm_max_tokens,
         }
-        if self.model:
-            body["model"] = self.model
         if tools:
             body["tools"] = tools
             body["tool_choice"] = "auto"
@@ -104,14 +73,11 @@ class OpenAIChatClient:
 
     async def _stream_once(self, body: dict[str, Any]) -> AsyncIterator[LlmEvent]:
         timeout = httpx2.Timeout(self.settings.llm_timeout_s, connect=10.0)
-        async with httpx2.AsyncClient(
-            timeout=timeout, transport=self._transport, proxy=self._proxy, verify=self._verify
-        ) as client:
+        async with httpx2.AsyncClient(timeout=timeout, transport=self._transport, verify=self._verify) as client:
             try:
                 async with client.stream(
                     "POST",
                     self.url,
-                    params=self.params or None,
                     headers={**self.headers, "Content-Type": "application/json"},
                     json=body,
                 ) as response:
@@ -134,15 +100,13 @@ class OpenAIChatClient:
                         yield event
             except httpx2.TimeoutException as exc:
                 raise LlmError("LLM request timed out", retryable=True) from exc
-            except httpx2.ProxyError as exc:
-                raise LlmError(f"LLM proxy error ({self.route}): {type(exc).__name__}", retryable=True) from exc
             except httpx2.TransportError as exc:
                 if "CERTIFICATE_VERIFY_FAILED" in str(exc):
                     raise LlmError(
-                        f"LLM TLS certificate not trusted ({self.route}); set LLM_CA_BUNDLE to your CA file",
+                        "LLM TLS certificate not trusted; set LLM_CA_BUNDLE to your CA file",
                         retryable=False,
                     ) from exc
-                raise LlmError(f"LLM transport error ({self.route}): {type(exc).__name__}", retryable=True) from exc
+                raise LlmError(f"LLM transport error: {type(exc).__name__}", retryable=True) from exc
 
 
 def _safe_error(detail: str) -> str:

@@ -56,20 +56,78 @@ async def test_llm_schema_hides_customer_id(gateway: McpGateway) -> None:
         assert "customer_id" not in params.get("required", [])
 
 
-@pytest.mark.anyio
-async def test_live_without_url_falls_back_to_sim() -> None:
+def _gw_with_customer(**env: str) -> McpGateway:
     store = SimStore()
     store.add_customer({"id": "C-1", "first_name": "T", "plan_id": "plus-500"})
-    gw = McpGateway(make_settings(LIVE_MCP_URL="", LIVE_FALLBACK_TO_SIM="true"), build_mcp_server(store))
-    out = await gw.call("live", "get_customer_profile", {"customer_id": "LIVE-9"}, sim_customer_id="C-1")
-    assert out.source == "sim" and out.fallback and out.data["first_name"] == "T"
+    return McpGateway(make_settings(**env), build_mcp_server(store))
 
 
 @pytest.mark.anyio
-async def test_live_without_url_and_no_fallback_errors() -> None:
-    gw = McpGateway(make_settings(LIVE_MCP_URL="", LIVE_FALLBACK_TO_SIM="false"), build_mcp_server(SimStore()))
-    out = await gw.call("live", "get_customer_profile", {"customer_id": "x"})
-    assert out.is_error and out.source == "live"
+async def test_without_live_url_everything_is_simulated() -> None:
+    gw = _gw_with_customer(LIVE_MCP_URL="")
+    assert gw.settings.data_source == "sim"
+    out = await gw.call("sim", "get_customer_profile", {"customer_id": "C-1"})
+    assert out.source == "sim" and not out.fallback and out.data["first_name"] == "T"
+
+
+@pytest.mark.anyio
+async def test_live_tool_missing_on_server_falls_back_to_sim(monkeypatch) -> None:
+    gw = _gw_with_customer(LIVE_MCP_URL="https://live.example.com/mcp")
+    assert gw.settings.data_source == "live"
+
+    async def listing() -> list[str]:
+        return ["some_other_tool"]
+
+    monkeypatch.setattr(gw, "list_live_tools", listing)
+    out = await gw.call("live", "get_customer_profile", {"customer_id": "LIVE-9"}, sim_customer_id="C-1")
+    assert out.source == "sim" and out.fallback and out.data["first_name"] == "T"
+    assert "not on the live server" in out.meta["fallback_reason"]
+
+
+@pytest.mark.anyio
+async def test_live_error_or_outage_falls_back_to_sim(monkeypatch) -> None:
+    from app.mcp_gateway import ToolOutcome
+
+    gw = _gw_with_customer(LIVE_MCP_URL="https://live.example.com/mcp")
+
+    async def listing() -> list[str]:
+        return ["get_customer_profile"]
+
+    async def live_error(name, arguments, started):  # noqa: ANN001
+        return ToolOutcome(name, "live", {"error": "customer not found"}, True, 5, error="not_found")
+
+    async def live_down(name, arguments, started):  # noqa: ANN001
+        raise ConnectionError("connection refused")
+
+    monkeypatch.setattr(gw, "list_live_tools", listing)
+    monkeypatch.setattr(gw, "_call_live", live_error)
+    out = await gw.call("live", "get_customer_profile", {"customer_id": "LIVE-9"}, sim_customer_id="C-1")
+    assert out.source == "sim" and out.fallback and "live returned an error" in out.meta["fallback_reason"]
+
+    monkeypatch.setattr(gw, "_call_live", live_down)
+    out = await gw.call("live", "get_customer_profile", {"customer_id": "LIVE-9"}, sim_customer_id="C-1")
+    assert out.source == "sim" and out.fallback and "live call failed" in out.meta["fallback_reason"]
+    assert gw._live_tools is None  # re-list after an outage
+
+
+@pytest.mark.anyio
+async def test_live_success_is_used(monkeypatch) -> None:
+    from app.mcp_gateway import ToolOutcome
+
+    gw = _gw_with_customer(LIVE_MCP_URL="https://live.example.com/mcp", LIVE_MCP_TOKEN="abc")
+    assert gw._live_headers()["Authorization"] == "Bearer abc"
+    assert _gw_with_customer(LIVE_MCP_TOKEN="Basic xyz")._live_headers()["Authorization"] == "Basic xyz"
+
+    async def listing() -> list[str]:
+        return ["get_customer_profile"]
+
+    async def live_ok(name, arguments, started):  # noqa: ANN001
+        return ToolOutcome(name, "live", {"first_name": "Real"}, False, 5)
+
+    monkeypatch.setattr(gw, "list_live_tools", listing)
+    monkeypatch.setattr(gw, "_call_live", live_ok)
+    out = await gw.call("live", "get_customer_profile", {"customer_id": "LIVE-9"}, sim_customer_id="C-1")
+    assert out.source == "live" and not out.fallback and out.data["first_name"] == "Real"
 
 
 @pytest.mark.anyio

@@ -16,7 +16,6 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 | Model calls tools it shouldn't | Per-scenario allowlist; unknown arguments dropped; malformed JSON rejected | `orchestrator` |
 | Runaway tool loops / cost | `MAX_TOOL_ROUNDS` per turn | `orchestrator._agent_loop` |
 | Unauthenticated MCP access | With `MCP_AUTH_REQUIRED=true`, `/mcp` requires `Authorization: Bearer MCP_SERVER_TOKEN` (constant-time compare). **Currently off** (see known gaps); while off, `/mcp` POSTs are rate limited per IP. Optional Host allowlist (DNS-rebinding protection) | `security.BearerTokenMiddleware`, `RateLimitMiddleware`, `MCP_ALLOWED_HOSTS` |
-| Model traffic leaving the network | Optional forward proxy for model calls only (`LLM_PROXY_URL`); HTTPS is tunnelled, so the proxy sees the Azure host but not the key or prompts (unless it inspects TLS, in which case `LLM_CA_BUNDLE` is needed) | `llm/openai_chat.py` |
 | Handoff link replay or forgery | HS256 JWT, pinned algorithm, `aud`/`iss`/`exp`/`jti` required, 5-minute TTL, single use; no customer data in the URL; removed from the address bar on load | `handoff.py`, `Chat.tsx` |
 | XSS from model output | UI renders markdown into React elements, never `innerHTML`; strict CSP (`script-src 'self'`, `frame-ancestors 'none'`) | `markdown.tsx`, `security.py` |
 | Unauthenticated account access | Chat sessions require an OAuth access token (HS256, `iss`/`aud`/`exp`/`jti` required, 30-minute TTL) from the authorization-code + PKCE flow; the token's subject decides whose account is loaded, never the URL or scenario | `oauth.py`, `main.api_create_session` |
@@ -30,7 +29,7 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 | Stuck or concurrent turns | One turn per session; a turn lock expires after 3 minutes; expired sessions release their simulated data | `sessions.py` |
 | Wrong device quoted | Device lookup refuses other variants or generations (e.g. Pro Max, iPhone 17) and flags unpriced storage | `sim._find_device`, `sim.device_offer` |
 | Abuse / large payloads | Per-IP rate limit on `/api` POSTs; 32 KB body limit; 2,000-char messages | `security.py`, `main.py` |
-| Secrets in source or logs | Secrets from env or a CF user-provided service; `.env` git- and cf-ignored; app refuses to start outside `local` without 32+ char secrets; logs mask emails, phones, card numbers, bearer tokens and API keys | `config.py`, `logging_setup.py` |
+| Secrets in source or logs | Secrets from env or a CF user-provided service; `.env` git- and cf-ignored; signing secrets are random per process (never configured or stored); `/mcp` auth refuses a short token outside `local`; logs mask emails, phones, card numbers, bearer tokens and API keys | `config.py`, `logging_setup.py` |
 | Leaking internals in errors | Browser gets generic messages; provider errors are summarised without keys | `orchestrator.run_turn`, `openai_chat._safe_error` |
 
 ## Known gaps (accepted for a prototype)
@@ -46,6 +45,6 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 ## Before going beyond a demo
 
 1. Put the app behind corporate SSO (CF route service) or set `DEMO_BASIC_AUTH_*`.
-2. Turn `/mcp` auth on (`MCP_AUTH_REQUIRED=true`), then rotate `MCP_SERVER_TOKEN` and `HANDOFF_SECRET`, and store them only in the user-provided service.
-3. Keep live **action** tools on `sim` unless a test account is used.
-4. Review Azure OpenAI content filters and data-retention settings for customer data.
+2. Turn `/mcp` auth on (`MCP_AUTH_REQUIRED=true`) with a 32+ char `MCP_SERVER_TOKEN`, stored only in the user-provided service.
+3. With `LIVE_MCP_URL` set, actions go live too: use test accounts in `live_customer_id`, or keep action tools off the live server.
+4. Review the model proxy's and Azure OpenAI's content filters and data-retention settings for customer data.

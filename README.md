@@ -30,28 +30,21 @@ A live **impact dashboard** counts containment, truck rolls avoided, offer conve
 Requirements: Python 3.12+, Node 18+ (Node 22 recommended), `make`.
 
 ```bash
-make setup        # venv + pip deps, npm deps, .env with generated secrets, UI build
+make setup        # venv + pip deps, npm deps, .env, UI build
 make run-mock     # no keys needed: offline scripted model
 # open http://localhost:8000
 ```
 
-To use the real model through your internal gateway (one URL in front of Azure that adds the key itself), edit `.env`:
+For the real model and live data, `.env` needs at most four values (empty = built-in simulation):
 
 ```bash
-LLM_PROVIDER=gateway
-LLM_GATEWAY_URL=https://<gateway-host>/completions/api
+LLM_PROXY_URL=https://<proxy-host>/completions/api   # your proxy in front of Azure OpenAI
+LLM_PROXY_KEY=<key>                                   # optional; "Bearer x" -> Authorization, else api-key
+LIVE_MCP_URL=https://<api-host>/mcp                   # optional; live data, simulator as fallback
+LIVE_MCP_TOKEN=<token>                                # optional
 ```
 
-Or call Azure OpenAI directly:
-
-```bash
-LLM_PROVIDER=azure_openai
-AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
-AZURE_OPENAI_API_KEY=<key>
-AZURE_OPENAI_DEPLOYMENT=gpt-4.1
-```
-
-Check it with `make llm-check` (one plain request and one tool-calling request), then `make dev` (auto-reload for Python and the UI) or `make run`.
+See [docs/configuration.md](docs/configuration.md). Check the model with `make llm-check` (one plain request and one tool-calling request), then `make dev` (auto-reload for Python and the UI) or `make run`.
 
 Demo path: **Home → Start from a search → pick an example → Continue with Tidelink**, then open **Impact** in another tab.
 
@@ -76,7 +69,7 @@ Demo path: **Home → Start from a search → pick an example → Continue with 
 Browser (React)
    │  SSE stream: text, tool cards, confirm cards
    ▼
-Starlette app ── /api/*  chat API ── Orchestrator ── Azure OpenAI (or mock)
+Starlette app ── /api/*  chat API ── Orchestrator ── model proxy → Azure OpenAI (or mock)
    │                                      │
    │                                      ├─ MCP client (in-process) ─► our MCP server (simulated APIs)
    │                                      └─ MCP client (HTTP + Authorization) ─► live MCP server
@@ -102,7 +95,7 @@ app/
   mcp_server.py      MCP tools (the contract)
   mcp_gateway.py     routes each tool to sim (in-process) or live (HTTP) MCP
   sim.py             simulated backend + business rules
-  llm/               Azure OpenAI / OpenAI-compatible client, offline mock
+  llm/               model-proxy client (chat completions), offline mock
   scenarios.py       scenario YAML loader and matcher
   handoff.py         signed single-use search handoff tokens
   metrics.py         impact metrics

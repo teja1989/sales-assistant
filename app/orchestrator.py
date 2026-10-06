@@ -63,7 +63,7 @@ class Orchestrator:
         return [spec.llm_schema() for spec in self._specs(session).values()]
 
     def _source(self, session: Session, tool: str) -> str:
-        return session.scenario.source_for(tool, self.settings.data_source_override)
+        return self.settings.data_source
 
     def _clean_args(self, spec: ToolSpec, raw: str) -> dict[str, Any]:
         try:

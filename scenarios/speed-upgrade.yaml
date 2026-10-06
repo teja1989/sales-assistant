@@ -19,7 +19,6 @@ tools:
   - get_eligible_offers
   - preview_order
   - submit_upgrade_order
-data_sources: {}
 suggested_replies:
   - "Yes, upgrade me"
   - "What does it cost after the promo?"

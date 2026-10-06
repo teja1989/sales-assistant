@@ -14,7 +14,6 @@ tools:
   - check_service_alerts
   - check_area_outage
   - activate_storm_data_pass
-data_sources: {}
 suggested_replies:
   - "Yes, turn it on"
   - "What if the power goes out?"

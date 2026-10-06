@@ -17,7 +17,7 @@ flowchart LR
     MCP[/mcp<br/>MCP server/]
     SIM[(Simulated backend)]
   end
-  LLM[Azure OpenAI<br/>or mock]
+  LLM[Model proxy → Azure OpenAI<br/>or mock]
   LIVE[Live MCP server<br/>real APIs]
 
   S -- handoff token --> C
@@ -59,15 +59,7 @@ flowchart LR
 
 ## Data-source routing
 
-Each scenario sets a source per tool:
-
-```yaml
-data_sources:
-  get_customer_profile: live   # real account data
-  run_line_diagnostics: sim    # everything else defaults to sim
-```
-
-`DATA_SOURCE_OVERRIDE=sim|live` forces all tools at once. The MCP gateway sends `sim` calls to our in-process MCP server and `live` calls to `LIVE_MCP_URL` with `Authorization: <LIVE_MCP_AUTH_SCHEME> <LIVE_MCP_TOKEN>`. If a live call fails and `LIVE_FALLBACK_TO_SIM=true`, the simulator answers and the UI badges the card "sim (fallback)" so the demo never silently fakes live data.
+One rule for every tool: with `LIVE_MCP_URL` set, calls go to the live server first; otherwise to our in-process simulator. The live path falls back to the simulator when the live server doesn't list the tool, can't be reached, or returns an error; the UI badges those cards **sim (fallback)** with the reason, so the demo never silently fakes live data. Live calls carry `Authorization: Bearer <LIVE_MCP_TOKEN>` and the scenario's `live_customer_id` when set.
 
 ## Why the model never sees `customer_id`
 
@@ -83,7 +75,7 @@ The MCP endpoint runs **stateless with JSON responses**, so any app instance can
 
 | To change | Edit |
 |---|---|
-| LLM provider or model | `.env` only (`LLM_PROVIDER`, `LLM_GATEWAY_*` or Azure vars) |
+| Model endpoint | `.env` only (`LLM_PROXY_URL`, `LLM_PROXY_KEY`) |
 | Scenario behaviour | `scenarios/*.yaml` |
 | Prices, plans, promo, mobile bundle, devices, trade-in | `data/catalog.yaml` |
 | A tool's contract | `app/mcp_server.py` (+ `app/sim.py` for simulated behaviour) |

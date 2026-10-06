@@ -3,7 +3,7 @@
 Both paths speak real MCP through the official SDK client:
 * sim  -> `Client(MCPServer)`: in-process MCP dispatch to our own server.
 * live -> `Client(streamable_http_client(url))`: an external MCP server, with an
-  Authorization header built from LIVE_MCP_AUTH_SCHEME + LIVE_MCP_TOKEN.
+  Authorization header from LIVE_MCP_TOKEN ("Bearer <token>" unless it already has a scheme).
 
 Live tool names can differ from ours; LIVE_TOOL_MAP renames them
 (e.g. "get_customer_profile=getAccountSummary").
@@ -25,6 +25,8 @@ from mcp.server.mcpserver import MCPServer
 from app.config import Settings
 
 log = logging.getLogger(__name__)
+
+LIVE_TOOLS_TTL_S = 300
 
 Source = Literal["sim", "live"]
 
@@ -100,6 +102,8 @@ class McpGateway:
         self.settings = settings
         self.sim_server = sim_server
         self._specs: dict[str, ToolSpec] = {}
+        self._live_tools: set[str] | None = None
+        self._live_tools_at = 0.0
 
     # ----------------------------------------------------------- discovery
     async def load_specs(self) -> dict[str, ToolSpec]:
@@ -134,39 +138,39 @@ class McpGateway:
     async def call(
         self, source: Source, name: str, arguments: dict[str, Any], sim_customer_id: str | None = None
     ) -> ToolOutcome:
-        """Call a tool. On live failure (with fallback on) the simulator answers, using
+        """Call a tool. Live first when configured; the simulator answers whenever the live server
+        doesn't have the tool, can't be reached, or returns an error. The simulator gets
         `sim_customer_id` because live and simulated customer ids can differ."""
         started = time.perf_counter()
         sim_arguments = {**arguments, "customer_id": sim_customer_id} if sim_customer_id else arguments
-        if source == "live" and not self.settings.live_configured:
-            if self.settings.live_fallback_to_sim:
-                outcome = await self._call_sim(name, sim_arguments, started)
-                outcome.fallback = True
-                outcome.meta["fallback_reason"] = "LIVE_MCP_URL not configured"
-                return outcome
-            return ToolOutcome(
-                name, "live", {"error": "Live data source not configured"}, True, 0, error="live_not_configured"
-            )
-        if source == "live":
-            try:
-                return await self._call_live(name, arguments, started)
-            except Exception as exc:  # noqa: BLE001 - network/protocol errors from a remote system
-                reason = _root_cause(exc)
-                log.warning("Live MCP call %s failed: %s", name, reason)
-                if self.settings.live_fallback_to_sim:
-                    outcome = await self._call_sim(name, sim_arguments, time.perf_counter())
-                    outcome.fallback = True
-                    outcome.meta["fallback_reason"] = f"live call failed ({reason})"
+        if source != "live" or not self.settings.live_configured:
+            return await self._call_sim(name, sim_arguments if source == "live" else arguments, started)
+        reason = ""
+        try:
+            remote = self.settings.live_tool_map.get(name, name)
+            if remote not in await self._live_tool_names():
+                reason = f"tool {remote!r} not on the live server"
+            else:
+                outcome = await self._call_live(name, arguments, started)
+                if not outcome.is_error:
                     return outcome
-                return ToolOutcome(
-                    name,
-                    "live",
-                    {"error": "Live system unavailable"},
-                    True,
-                    int((time.perf_counter() - started) * 1000),
-                    error=reason,
-                )
-        return await self._call_sim(name, arguments, started)
+                reason = f"live returned an error ({outcome.error or 'tool error'})"
+        except Exception as exc:  # noqa: BLE001 - network/protocol errors from a remote system
+            reason = f"live call failed ({_root_cause(exc)})"
+            self._live_tools = None  # re-list next time; the server may have changed or restarted
+        log.warning("Live MCP %s: %s; answering from the simulator", name, reason)
+        outcome = await self._call_sim(name, sim_arguments, time.perf_counter())
+        outcome.fallback = True
+        outcome.meta["fallback_reason"] = reason
+        return outcome
+
+    async def _live_tool_names(self) -> set[str]:
+        """Live tool list, cached for a few minutes so each call doesn't re-list."""
+        now = time.monotonic()
+        if self._live_tools is None or now - self._live_tools_at > LIVE_TOOLS_TTL_S:
+            self._live_tools = set(await self.list_live_tools())
+            self._live_tools_at = now
+        return self._live_tools
 
     async def _call_sim(self, name: str, arguments: dict[str, Any], started: float) -> ToolOutcome:
         async with Client(self.sim_server) as client:
@@ -178,8 +182,9 @@ class McpGateway:
         headers = {"User-Agent": "tidelink-assist/0.1"}
         token = self.settings.live_mcp_token
         if token:
-            scheme = self.settings.live_mcp_auth_scheme.strip()
-            headers["Authorization"] = f"{scheme} {token}" if scheme else token
+            # "Bearer x" / "Basic x" are sent as given; a bare token gets "Bearer ".
+            has_scheme = " " in token and token.split(" ", 1)[0].isalpha()
+            headers["Authorization"] = token if has_scheme else f"Bearer {token}"
         return headers
 
     def _live_client(self) -> _LiveClient:

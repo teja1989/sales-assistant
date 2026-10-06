@@ -25,7 +25,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from app import __version__
-from app.config import Settings, load_settings
+from app.config import Settings, display_url, load_settings
 from app.handoff import HandoffError, HandoffSigner
 from app.llm import build_llm
 from app.llm.base import LlmClient
@@ -117,12 +117,10 @@ async def api_config(request: Request) -> Response:
             "oauth_required": s.oauth_required,
             "tagline": s.tagline,
             "llm": ctx.llm.name,
-            # "direct" or "via proxy" only: the proxy host stays out of the browser.
-            "llm_route": "via proxy" if s.llm_proxy_url and s.llm_provider != "mock" else "direct",
             "mcp_auth_required": s.mcp_auth_required,
             "live_configured": s.live_configured,
             "live_host": urlparse(s.live_mcp_url).hostname if s.live_configured else None,
-            "data_source_override": s.data_source_override or None,
+            "data_source": s.data_source,
             "version": __version__,
         }
     )
@@ -130,11 +128,10 @@ async def api_config(request: Request) -> Response:
 
 async def api_scenarios(request: Request) -> Response:
     ctx = _state(request)
-    override = ctx.settings.data_source_override
     items = []
     for sc in in_demo_order(ctx.scenarios):
         view = sc.public_view()
-        view["data_sources"] = {t: sc.source_for(t, override) for t in sc.tools}
+        view["data_sources"] = {t: ctx.settings.data_source for t in sc.tools}
         # Demo persona for the launcher: first name and plan only, never ids or contact data.
         view["persona"] = {"first_name": str(sc.customer["first_name"]), "plan": _plan_name(ctx, sc)}
         items.append(view)
@@ -214,13 +211,12 @@ async def api_create_session(request: Request) -> Response:
     )
     ctx.metrics.session_started(session.id, scenario.id)
     profile = ctx.store.customer_profile(customer_id)
-    override = ctx.settings.data_source_override
     return JSONResponse(
         {
             "session_id": session.id,
             "scenario": {
                 **scenario.public_view(),
-                "data_sources": {t: scenario.source_for(t, override) for t in scenario.tools},
+                "data_sources": {t: ctx.settings.data_source for t in scenario.tools},
             },
             "search_query": handoff.search_query,
             "customer": {"first_name": profile["first_name"], "plan": profile["plan"]["name"]},
@@ -375,14 +371,13 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
             accounts.append(DemoAccount(cid, str(scenario.customer["first_name"]), plan, scenario.id, scenario.title))
         ctx.idp.set_accounts(accounts)
         log.info(
-            "Started %s v%s: env=%s llm=%s (%s) scenarios=%s live_mcp=%s mcp_auth=%s",
+            "Started %s v%s: env=%s llm=%s scenarios=%s live_mcp=%s mcp_auth=%s",
             settings.app_name,
             __version__,
             settings.app_env,
             llm.name,
-            getattr(llm, "route", "local"),
             ",".join(ctx.scenarios),
-            "configured" if settings.live_configured else "off",
+            display_url(settings.live_mcp_url) if settings.live_configured else "off (simulator)",
             "bearer" if settings.mcp_auth_required else "OFF",
         )
         async with mcp_server.session_manager.run():

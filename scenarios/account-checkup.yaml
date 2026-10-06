@@ -26,7 +26,6 @@ tools:
   - return_unused_equipment
   - update_gateway_firmware
   - get_device_offer
-data_sources: {}
 suggested_replies:
   - "Yes, let's do it"
   - "Why did the price change?"

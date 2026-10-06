@@ -41,13 +41,8 @@ export function Home({ config }: { config: AppConfig | null }) {
           </div>
           {config && (
             <p className="runtime">
-              Model: <strong>{config.llm}</strong>
-              {config.llm_route === "via proxy" && <> (via proxy)</>}. Live MCP: <strong>{config.live_configured ? config.live_host : "not connected (simulator only)"}</strong>
-              {config.data_source_override && (
-                <>
-                  . Forced data source: <strong>{config.data_source_override}</strong>
-                </>
-              )}
+              Model: <strong>{config.llm === "mock" ? "offline mock" : "via proxy"}</strong>. Data:{" "}
+              <strong>{config.live_configured ? `live MCP (${config.live_host}), simulator as fallback` : "simulator"}</strong>.
             </p>
           )}
         </section>

@@ -16,7 +16,6 @@ tools:
   - get_device_offer
   - preview_order
   - submit_upgrade_order
-data_sources: {}
 suggested_replies:
   - "Yes, preview the order"
   - "How does the trade-in work?"

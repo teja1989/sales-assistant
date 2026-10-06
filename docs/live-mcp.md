@@ -1,17 +1,13 @@
-# Connecting live data (external MCP server)
+# Connecting live data (your MCP server)
 
-Some flows can use real data from your own MCP server (for example your Python API's `/mcp` endpoint) while the rest stay simulated.
-
-## 1. Configure the endpoint
-
-In `.env` (local) or the CF user-provided service:
+## 1. Configure
 
 ```bash
 LIVE_MCP_URL=https://your-api.example.com/mcp
-LIVE_MCP_TOKEN=<token>
-LIVE_MCP_AUTH_SCHEME=Bearer      # sends "Authorization: Bearer <token>"; set empty to send the raw token
-LIVE_FALLBACK_TO_SIM=true        # recommended for demos
+LIVE_MCP_TOKEN=<token>          # sent as "Authorization: Bearer <token>"
 ```
+
+That's it: every flow now calls your server first. Anything it can't answer (tool missing, server unreachable, error such as customer not found) is answered by the simulator, and the tool card and trace show **sim (fallback)** with the reason. Live and simulated data are never confused.
 
 ## 2. Check connectivity and tool names
 
@@ -19,38 +15,29 @@ LIVE_FALLBACK_TO_SIM=true        # recommended for demos
 curl -s http://localhost:8000/api/live/check | python3 -m json.tool
 ```
 
-The response lists the remote tools and `missing_for_our_tools`: our tool names that the live server doesn't have.
+The response lists the remote tools and `missing_for_our_tools`: our tool names your server doesn't have (those stay simulated).
 
-## 3. Map tool names (if they differ)
+## 3. Map tool names (only if they differ)
 
 ```bash
 LIVE_TOOL_MAP=get_customer_profile=getAccountSummary,check_area_outage=getOutageStatus
 ```
 
-Arguments are passed through unchanged (`customer_id` plus the tool's own fields). If your server uses different argument names, either add a thin adapter tool on your server or extend `McpGateway._call_live`.
+Arguments are passed through unchanged (`customer_id` plus the tool's own fields). If your server uses different argument names, add a thin adapter tool on your server or extend `McpGateway._call_live`.
 
-## 4. Choose which flows use live data
+## 4. Point demo customers at real or test accounts
 
-Per scenario:
+By default, live calls receive the demo customer's simulated id (e.g. `LUM-1001`), which your server won't know, so those calls fall back to the simulator. To query a real or test account, add it to the scenario file:
 
 ```yaml
-data_sources:
-  get_customer_profile: live
-  check_area_outage: live
-live_customer_id: "123456789"   # the real/test account to query
+live_customer_id: "123456789"
 ```
-
-Or force everything: `DATA_SOURCE_OVERRIDE=live`.
-
-## What the demo shows
-
-Every tool card and the MCP trace show a **sim** or **live** badge. If a live call fails and fallback is on, the card reads **sim (fallback)** and the dashboard counts it under sim, so live and simulated data are never confused.
 
 ## Results format
 
-The gateway accepts a tool result as `structuredContent` (preferred), or a text block containing JSON, or plain text (wrapped as `{"text": ...}`). Tool errors (`isError: true`) are shown to the model as errors and counted on the dashboard.
+The gateway accepts a tool result as `structuredContent` (preferred), a text block containing JSON, or plain text (wrapped as `{"text": ...}`).
 
-## Safety notes for live data
+## Safety notes
 
-- Use a **test account** for demos. Simulated actions are harmless; live action tools (reboot, order) would change a real account. Keep action tools on `sim` unless you intend that.
+- **Actions go live too.** With `LIVE_MCP_URL` set, confirmed actions (reboot, order, credit) are sent to your server when it has those tools. Use **test accounts** in `live_customer_id`, or leave action tools off your server, unless you intend real changes.
 - The live token is sent only to `LIVE_MCP_URL`, never to the browser, and is masked in logs.

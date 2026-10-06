@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import jwt
 
 from app.oauth import AUDIENCE, ISSUER
-from tests.conftest import TEST_ENV, parse_sse, scripted_client, sign_in, start_session, turn
+from tests.conftest import parse_sse, scripted_client, sign_in, start_session, turn
 
 BASE = "http://testserver"
 REDIRECT = f"{BASE}/chat/callback"
@@ -187,7 +187,8 @@ def test_session_requires_a_valid_token(client) -> None:
 def test_expired_and_forged_tokens_rejected(client) -> None:
     now = int(time.time())
     claims = {"iss": ISSUER, "aud": AUDIENCE, "sub": "LUM-9100", "scope": "account:read", "jti": "j", "iat": now - 99}
-    expired = jwt.encode({**claims, "exp": now - 10}, TEST_ENV["HANDOFF_SECRET"] + "x", algorithm="HS256")
+    real_secret = client.app.state.ctx.settings.oauth_signing_secret
+    expired = jwt.encode({**claims, "exp": now - 10}, real_secret, algorithm="HS256")
     forged = jwt.encode({**claims, "exp": now + 600}, "not-the-real-signing-secret-000000", algorithm="HS256")
     for token in (expired, forged):
         assert open_session(client, token).status_code == 401

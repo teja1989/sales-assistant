@@ -25,15 +25,9 @@ venv: ## Create .venv and install Python dependencies
 web-install: ## Install web dependencies
 	cd web && npm install
 
-env: ## Create .env from .env.example with freshly generated secrets (never overwrites)
+env: ## Create .env from .env.example (never overwrites)
 	@if [ -f .env ]; then echo ".env already exists; leaving it alone"; else \
-	  cp .env.example .env; \
-	  MCP=$$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))'); \
-	  HOS=$$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))'); \
-	  OAS=$$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))'); \
-	  sed -i.bak -e "s|^MCP_SERVER_TOKEN=.*|MCP_SERVER_TOKEN=$$MCP|" -e "s|^HANDOFF_SECRET=.*|HANDOFF_SECRET=$$HOS|" \
-	    -e "s|^OAUTH_SIGNING_SECRET=.*|OAUTH_SIGNING_SECRET=$$OAS|" .env; \
-	  rm -f .env.bak; echo "Created .env with generated MCP_SERVER_TOKEN, HANDOFF_SECRET and OAUTH_SIGNING_SECRET"; fi
+	  cp .env.example .env && echo "Created .env: set LLM_PROXY_URL (and LIVE_MCP_URL if you have one)"; fi
 
 # ------------------------------------------------------------------ run
 dev: ## Run API with auto-reload + rebuild UI on change (http://localhost:8000)
@@ -45,8 +39,8 @@ dev: ## Run API with auto-reload + rebuild UI on change (http://localhost:8000)
 run: build-web ## Build the UI and run the app as it runs on Cloud Foundry
 	$(BIN)/python -m uvicorn app.main:app --port $(PORT) --proxy-headers
 
-run-mock: build-web ## Run with the offline mock model (no Azure keys needed)
-	LLM_PROVIDER=mock $(BIN)/python -m uvicorn app.main:app --port $(PORT)
+run-mock: build-web ## Run with the offline mock model (ignores LLM_PROXY_URL)
+	LLM_PROXY_URL= $(BIN)/python -m uvicorn app.main:app --port $(PORT)
 
 build-web: ## Bundle the React UI into app/static
 	cd web && npm run build
@@ -68,7 +62,7 @@ typecheck-web: ## Type-check the React app
 
 check: lint test typecheck-web build-web ## Everything CI runs
 
-llm-check: ## Check the model is reachable with your .env (direct or via LLM_PROXY_URL)
+llm-check: ## Check LLM_PROXY_URL answers and can call tools
 	$(BIN)/python -m app.llm_check
 
 smoke: ## Smoke-test a running app (BASE_URL=... to target Cloud Foundry)

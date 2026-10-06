@@ -69,7 +69,9 @@ def test_basic_auth_gate_when_configured() -> None:
 
 def test_config_response_has_no_secrets(client) -> None:
     body = client.get("/api/config").text
-    assert TEST_ENV["MCP_SERVER_TOKEN"] not in body and TEST_ENV["HANDOFF_SECRET"] not in body
+    ctx = client.app.state.ctx
+    for secret in (TEST_ENV["MCP_SERVER_TOKEN"], ctx.settings.handoff_secret, ctx.settings.oauth_signing_secret):
+        assert secret not in body
 
 
 # --------------------------------------------------------------- handoff
@@ -107,16 +109,10 @@ def test_session_endpoint_rejects_reused_handoff(client) -> None:
 
 
 # ---------------------------------------------------------------- config
-def test_non_local_env_requires_strong_secrets() -> None:
-    with pytest.raises(ConfigError):
-        make_settings(APP_ENV="prod", MCP_SERVER_TOKEN="short", HANDOFF_SECRET="short")
-
-
-def test_azure_provider_requires_settings() -> None:
-    with pytest.raises(ConfigError):
-        make_settings(
-            LLM_PROVIDER="azure_openai", AZURE_OPENAI_ENDPOINT="", AZURE_OPENAI_API_KEY="", AZURE_OPENAI_DEPLOYMENT=""
-        )
+def test_signing_secrets_are_generated_per_process() -> None:
+    a, b = make_settings(HANDOFF_SECRET="ignored"), make_settings()
+    assert len(a.handoff_secret) >= 32 and len(a.oauth_signing_secret) >= 32
+    assert a.handoff_secret != "ignored" and a.handoff_secret != b.handoff_secret
 
 
 def test_vcap_user_provided_service(monkeypatch) -> None:
@@ -124,17 +120,16 @@ def test_vcap_user_provided_service(monkeypatch) -> None:
         "VCAP_SERVICES",
         (
             '{"user-provided":[{"name":"sales-assistant-secrets","credentials":'
-            '{"AZURE_OPENAI_API_KEY":"from-vcap","live_mcp_token":"lt"}}]}'
+            '{"llm_proxy_key":"from-vcap","live_mcp_token":"lt"}}]}'
         ),
     )
-    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_PROXY_KEY", raising=False)
     monkeypatch.delenv("LIVE_MCP_TOKEN", raising=False)
-    s = make_settings(
-        LLM_PROVIDER="azure_openai",
-        AZURE_OPENAI_ENDPOINT="https://x.openai.azure.com",
-        AZURE_OPENAI_DEPLOYMENT="gpt-4.1",
-    )
-    assert s.azure_openai_api_key == "from-vcap"
+    overrides = {k: v for k, v in TEST_ENV.items() if k not in ("LLM_PROXY_KEY", "LIVE_MCP_TOKEN")}
+    from app.config import load_settings
+
+    s = load_settings(overrides)
+    assert s.llm_proxy_key == "from-vcap"
     assert s.live_mcp_token == "lt"
 
 
@@ -160,24 +155,19 @@ def test_open_mcp_is_rate_limited() -> None:
         assert 429 in codes
 
 
-def test_mcp_token_not_required_outside_local_when_auth_off() -> None:
-    secret = "x" * 40
-    settings = make_settings(
-        APP_ENV="prod",
-        MCP_AUTH_REQUIRED="false",
-        MCP_SERVER_TOKEN="",
-        HANDOFF_SECRET=secret,
-        OAUTH_SIGNING_SECRET=secret,
-    )
-    assert settings.mcp_auth_required is False
+def test_mcp_auth_defaults_off_and_token_rules() -> None:
+    from app.config import load_settings
+
+    defaults = load_settings({k: v for k, v in TEST_ENV.items() if k not in ("MCP_AUTH_REQUIRED", "MCP_SERVER_TOKEN")})
+    assert defaults.mcp_auth_required is False and defaults.mcp_server_token == ""
+    assert make_settings(APP_ENV="prod", MCP_AUTH_REQUIRED="false").mcp_auth_required is False
     with pytest.raises(ConfigError, match="MCP_SERVER_TOKEN"):
-        make_settings(APP_ENV="prod", MCP_SERVER_TOKEN="short", HANDOFF_SECRET=secret, OAUTH_SIGNING_SECRET=secret)
+        make_settings(APP_ENV="prod", MCP_AUTH_REQUIRED="true", MCP_SERVER_TOKEN="short")
 
 
-def test_llm_proxy_settings_validated(tmp_path) -> None:
-    with pytest.raises(ConfigError, match="LLM_PROXY_URL"):
-        make_settings(LLM_PROXY_URL="proxy.corp:8080")
+def test_url_settings_validated(tmp_path) -> None:
+    with pytest.raises(ConfigError, match="LIVE_MCP_URL"):
+        make_settings(LIVE_MCP_URL="https:///mcp")
     with pytest.raises(ConfigError, match="LLM_CA_BUNDLE"):
         make_settings(LLM_CA_BUNDLE=str(tmp_path / "missing.pem"))
-    ok = make_settings(LLM_PROXY_URL="http://proxy.corp.example:8080")
-    assert ok.llm_proxy_url == "http://proxy.corp.example:8080"
+    assert make_settings(LIVE_MCP_URL="api.example.com/mcp").live_mcp_url == "https://api.example.com/mcp"

@@ -7,12 +7,8 @@ set -euo pipefail
 ENV_FILE="${1:-.env}"
 SERVICE="${SECRETS_SERVICE_NAME:-sales-assistant-secrets}"
 KEYS=(
-  AZURE_OPENAI_ENDPOINT AZURE_OPENAI_API_KEY AZURE_OPENAI_DEPLOYMENT AZURE_OPENAI_API_VERSION
-  LLM_PROXY_URL LLM_GATEWAY_URL LLM_GATEWAY_KEY_HEADER LLM_GATEWAY_KEY LLM_GATEWAY_MODEL
-  OPENAI_COMPAT_BASE_URL OPENAI_COMPAT_API_KEY OPENAI_COMPAT_MODEL OPENAI_COMPAT_KEY_HEADER
-  MCP_SERVER_TOKEN HANDOFF_SECRET OAUTH_SIGNING_SECRET
-  LIVE_MCP_URL LIVE_MCP_TOKEN LIVE_MCP_AUTH_SCHEME LIVE_TOOL_MAP
-  DEMO_BASIC_AUTH_USER DEMO_BASIC_AUTH_PASSWORD
+  LLM_PROXY_URL LLM_PROXY_KEY LIVE_MCP_URL LIVE_MCP_TOKEN
+  MCP_SERVER_TOKEN LIVE_TOOL_MAP
 )
 
 command -v cf >/dev/null || { echo "cf CLI not found" >&2; exit 1; }
@@ -30,11 +26,8 @@ from pathlib import Path
 env_file, out, *keys = sys.argv[1:]
 values = _read_dotenv(Path(env_file))
 creds = {k: values[k] for k in keys if values.get(k)}
-for required in ("HANDOFF_SECRET", "OAUTH_SIGNING_SECRET"):
-    if len(creds.get(required, "")) < 32:
-        sys.exit(f"{required} must be at least 32 characters (run: make env)")
-if len(creds.get("MCP_SERVER_TOKEN", "")) < 32:
-    print("Note: no MCP_SERVER_TOKEN (32+ chars). Fine while MCP_AUTH_REQUIRED=false; needed to turn /mcp auth on.")
+if not creds.get("LLM_PROXY_URL"):
+    print("Note: LLM_PROXY_URL is empty, so the app will use the offline mock model.")
 Path(out).write_text(json.dumps(creds))
 print("Keys to store:", ", ".join(sorted(creds)))
 PY
