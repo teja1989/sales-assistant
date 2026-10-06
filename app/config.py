@@ -16,6 +16,7 @@ import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
 
@@ -144,9 +145,12 @@ class Settings:
     llm_max_tokens: int = 700
     llm_max_tokens_param: str = "max_tokens"
     llm_timeout_s: float = 60.0
+    llm_proxy_url: str = ""  # forward HTTP proxy used only for LLM calls (e.g. http://proxy.corp:8080)
+    llm_ca_bundle: str = ""  # extra CA bundle (PEM) for TLS-inspecting proxies or internal gateways
     mock_stream_delay_ms: int = 12
 
     # Our own MCP server (/mcp)
+    mcp_auth_required: bool = True  # false = /mcp open to any client (rate limited); turn on before exposing it
     mcp_server_token: str = ""
     mcp_allowed_hosts: list[str] = field(default_factory=list)
 
@@ -210,14 +214,15 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         raise ConfigError("OPENAI_COMPAT_KEY_HEADER must be authorization or api-key")
 
     local = app_env in ("local", "test")
-    mcp_token = get("MCP_SERVER_TOKEN") or ""
+    mcp_auth = _bool(get("MCP_AUTH_REQUIRED"), True)
+    mcp_token = (get("MCP_SERVER_TOKEN") or "") if mcp_auth else ""
     handoff_secret = get("HANDOFF_SECRET") or ""
     oauth_secret = get("OAUTH_SIGNING_SECRET") or ""
     if not local:
         missing = [
             name
             for name, value in (
-                ("MCP_SERVER_TOKEN", mcp_token),
+                *((("MCP_SERVER_TOKEN", mcp_token),) if mcp_auth else ()),
                 ("HANDOFF_SECRET", handoff_secret),
                 ("OAUTH_SIGNING_SECRET", oauth_secret),
             )
@@ -230,7 +235,7 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
             )
     else:
         # Local convenience: generate ephemeral secrets so the app starts, and say so.
-        if not mcp_token:
+        if mcp_auth and not mcp_token:
             mcp_token = secrets.token_urlsafe(32)
             log.warning("MCP_SERVER_TOKEN not set; generated an ephemeral token for this run")
         if not handoff_secret:
@@ -258,7 +263,10 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         llm_max_tokens=_int(get("LLM_MAX_TOKENS"), 700),
         llm_max_tokens_param=get("LLM_MAX_TOKENS_PARAM") or "max_tokens",
         llm_timeout_s=_float(get("LLM_TIMEOUT_S"), 60.0),
+        llm_proxy_url=(get("LLM_PROXY_URL") or "").strip(),
+        llm_ca_bundle=(get("LLM_CA_BUNDLE") or "").strip(),
         mock_stream_delay_ms=_int(get("MOCK_STREAM_DELAY_MS"), 12),
+        mcp_auth_required=mcp_auth,
         mcp_server_token=mcp_token,
         mcp_allowed_hosts=_csv(get("MCP_ALLOWED_HOSTS")),
         live_mcp_url=(get("LIVE_MCP_URL") or "").strip(),
@@ -288,6 +296,12 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
 
 
 def _validate_llm(s: Settings) -> None:
+    if s.llm_proxy_url:
+        proxy = urlsplit(s.llm_proxy_url)
+        if proxy.scheme not in ("http", "https") or not proxy.hostname:
+            raise ConfigError("LLM_PROXY_URL must look like http://proxy-host:port")
+    if s.llm_ca_bundle and not Path(s.llm_ca_bundle).is_file():
+        raise ConfigError(f"LLM_CA_BUNDLE file not found: {s.llm_ca_bundle}")
     if s.llm_provider == "azure_openai":
         missing = [
             name
@@ -314,3 +328,11 @@ def _validate_llm(s: Settings) -> None:
         ]
         if missing:
             raise ConfigError(f"LLM_PROVIDER=openai_compatible requires {', '.join(missing)}")
+
+
+def describe_proxy(url: str) -> str:
+    """Proxy host:port for logs and status, never credentials."""
+    if not url:
+        return ""
+    parts = urlsplit(url)
+    return f"{parts.hostname}:{parts.port}" if parts.port else str(parts.hostname)

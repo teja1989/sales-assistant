@@ -15,7 +15,8 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 | Upsell while service is broken | Offers return `blocked: true` server-side while a fault is open | `sim.offers` |
 | Model calls tools it shouldn't | Per-scenario allowlist; unknown arguments dropped; malformed JSON rejected | `orchestrator` |
 | Runaway tool loops / cost | `MAX_TOOL_ROUNDS` per turn | `orchestrator._agent_loop` |
-| Unauthenticated MCP access | `/mcp` requires `Authorization: Bearer MCP_SERVER_TOKEN` (constant-time compare); optional Host allowlist (DNS-rebinding protection) | `security.BearerTokenMiddleware`, `MCP_ALLOWED_HOSTS` |
+| Unauthenticated MCP access | With `MCP_AUTH_REQUIRED=true`, `/mcp` requires `Authorization: Bearer MCP_SERVER_TOKEN` (constant-time compare). **Currently off** (see known gaps); while off, `/mcp` POSTs are rate limited per IP. Optional Host allowlist (DNS-rebinding protection) | `security.BearerTokenMiddleware`, `RateLimitMiddleware`, `MCP_ALLOWED_HOSTS` |
+| Model traffic leaving the network | Optional forward proxy for model calls only (`LLM_PROXY_URL`); HTTPS is tunnelled, so the proxy sees the Azure host but not the key or prompts (unless it inspects TLS, in which case `LLM_CA_BUNDLE` is needed) | `llm/openai_chat.py` |
 | Handoff link replay or forgery | HS256 JWT, pinned algorithm, `aud`/`iss`/`exp`/`jti` required, 5-minute TTL, single use; no customer data in the URL; removed from the address bar on load | `handoff.py`, `Chat.tsx` |
 | XSS from model output | UI renders markdown into React elements, never `innerHTML`; strict CSP (`script-src 'self'`, `frame-ancestors 'none'`) | `markdown.tsx`, `security.py` |
 | Unauthenticated account access | Chat sessions require an OAuth access token (HS256, `iss`/`aud`/`exp`/`jti` required, 30-minute TTL) from the authorization-code + PKCE flow; the token's subject decides whose account is loaded, never the URL or scenario | `oauth.py`, `main.api_create_session` |
@@ -37,13 +38,14 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 - **Simulated sign-in.** The identity provider is a mock: no passwords, demo accounts only, in-memory codes and revocations. The protocol is real, so production swaps in the company IdP (and validates its tokens via JWKS) without changing the chat flow. The backing APIs must also enforce the token's subject and scopes, not just this app.
 - **Session ids are bearer secrets** (random, 192-bit) held in browser memory. No CSRF token is needed because the API takes JSON bodies and no cookies, but add one if you introduce cookie auth.
 - **In-memory state**: rate-limit buckets, sessions and handoff replay protection are per instance.
-- **Static bearer token for `/mcp`.** Fine for a demo. For production, use OAuth 2.1 or your gateway's auth (the MCP SDK supports a token verifier).
+- **`/mcp` has no auth right now** (`MCP_AUTH_REQUIRED=false`). Anyone who can reach the route can list and call its tools. Today it serves **simulated data only**, and action tools change only the simulator, so the exposure is low. It is also not used by the chat itself (the chat calls the MCP server in-process). Turn auth on (`MCP_AUTH_REQUIRED=true` plus a 32+ char `MCP_SERVER_TOKEN`) **before** the route is reachable from outside the internal network, before pointing Muse at it, or before `/mcp` fronts any live data.
+- **Static bearer token for `/mcp`** when auth is on. Fine for a demo. For production, use OAuth 2.1 or your gateway's auth (the MCP SDK supports a token verifier).
 - **Price guard is heuristic.** It catches `$` amounts, not prices written out in words.
 - **Prompt injection via tool data** is mitigated (tool output is labelled as data, and every consequential action is gated in code) but not eliminated as a class.
 
 ## Before going beyond a demo
 
 1. Put the app behind corporate SSO (CF route service) or set `DEMO_BASIC_AUTH_*`.
-2. Rotate `MCP_SERVER_TOKEN` and `HANDOFF_SECRET`, and store them only in the user-provided service.
+2. Turn `/mcp` auth on (`MCP_AUTH_REQUIRED=true`), then rotate `MCP_SERVER_TOKEN` and `HANDOFF_SECRET`, and store them only in the user-provided service.
 3. Keep live **action** tools on `sim` unless a test account is used.
 4. Review Azure OpenAI content filters and data-retention settings for customer data.

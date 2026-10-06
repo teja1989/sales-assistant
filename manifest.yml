@@ -24,6 +24,8 @@ applications:
       LOG_LEVEL: INFO
       LLM_PROVIDER: azure_openai
       SECRETS_SERVICE_NAME: sales-assistant-secrets
+      MCP_AUTH_REQUIRED: "false" # /mcp open for now; set "true" and add MCP_SERVER_TOKEN before exposing it
+      # LLM_PROXY_URL: http://proxy.corp.example:8080   # or keep it in .env and run make cf-secrets
       # MCP_ALLOWED_HOSTS: sales-assistant.apps.example.com
       # DATA_SOURCE_OVERRIDE: sim
     services:

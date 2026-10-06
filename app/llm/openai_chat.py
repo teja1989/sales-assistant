@@ -14,12 +14,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import ssl
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx2
 
-from app.config import Settings
+from app.config import Settings, describe_proxy
 from app.llm.base import LlmError, LlmEvent, TextDelta, ToolCall, TurnComplete
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,13 @@ class OpenAIChatClient:
     def __init__(self, settings: Settings, transport: httpx2.AsyncBaseTransport | None = None) -> None:
         self.settings = settings
         self._transport = transport
+        # Only LLM traffic goes through LLM_PROXY_URL, so live MCP and internal calls are unaffected.
+        # HTTPS through a forward proxy is tunnelled (CONNECT): TLS still ends at the Azure host.
+        self._proxy = settings.llm_proxy_url or None
+        self._verify: ssl.SSLContext | bool = (
+            ssl.create_default_context(cafile=settings.llm_ca_bundle) if settings.llm_ca_bundle else True
+        )
+        self.route = f"via proxy {describe_proxy(settings.llm_proxy_url)}" if settings.llm_proxy_url else "direct"
         if settings.llm_provider == "azure_openai":
             self.name = f"azure_openai:{settings.azure_openai_deployment}"
             self.url = (
@@ -77,14 +85,16 @@ class OpenAIChatClient:
             except LlmError as exc:
                 # Only retry when nothing has been streamed yet, so the user never sees duplicates.
                 if exc.retryable and not emitted and attempt < attempts:
-                    log.warning("LLM call failed with %s; retrying once", exc.status)
+                    log.warning("LLM call failed (%s); retrying once", exc.status or exc)
                     await asyncio.sleep(1.5)
                     continue
                 raise
 
     async def _stream_once(self, body: dict[str, Any]) -> AsyncIterator[LlmEvent]:
         timeout = httpx2.Timeout(self.settings.llm_timeout_s, connect=10.0)
-        async with httpx2.AsyncClient(timeout=timeout, transport=self._transport) as client:
+        async with httpx2.AsyncClient(
+            timeout=timeout, transport=self._transport, proxy=self._proxy, verify=self._verify
+        ) as client:
             try:
                 async with client.stream(
                     "POST",
@@ -104,8 +114,15 @@ class OpenAIChatClient:
                         yield event
             except httpx2.TimeoutException as exc:
                 raise LlmError("LLM request timed out", retryable=True) from exc
+            except httpx2.ProxyError as exc:
+                raise LlmError(f"LLM proxy error ({self.route}): {type(exc).__name__}", retryable=True) from exc
             except httpx2.TransportError as exc:
-                raise LlmError(f"LLM transport error: {type(exc).__name__}", retryable=True) from exc
+                if "CERTIFICATE_VERIFY_FAILED" in str(exc):
+                    raise LlmError(
+                        f"LLM TLS certificate not trusted ({self.route}); set LLM_CA_BUNDLE to your CA file",
+                        retryable=False,
+                    ) from exc
+                raise LlmError(f"LLM transport error ({self.route}): {type(exc).__name__}", retryable=True) from exc
 
 
 def _safe_error(detail: str) -> str:

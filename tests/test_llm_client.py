@@ -153,3 +153,96 @@ async def test_content_filter_is_reported() -> None:
     client = OpenAIChatClient(make_settings(**AZURE), transport=httpx2.MockTransport(handler))
     with pytest.raises(LlmError):
         await collect(client)
+
+
+# ------------------------------------------------------------ forward proxy
+class _RecordingProxy:
+    """Minimal forward proxy on localhost: records request lines; tunnels nothing.
+
+    HTTPS targets arrive as CONNECT (answered 403 so no real network is used).
+    Plain-HTTP targets arrive in absolute form and get a canned SSE stream back.
+    """
+
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+        self.server = None
+
+    async def __aenter__(self) -> str:
+        import asyncio
+
+        async def handle(reader, writer) -> None:  # noqa: ANN001
+            head = await reader.readuntil(b"\r\n\r\n")
+            first = head.split(b"\r\n", 1)[0].decode()
+            self.lines.append(first)
+            if first.startswith("CONNECT "):
+                writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+            else:
+                length = int(
+                    next(
+                        (ln.split(b":")[1] for ln in head.split(b"\r\n") if ln.lower().startswith(b"content-length")),
+                        b"0",
+                    )
+                )
+                await reader.readexactly(length)
+                body = sse({"choices": [{"index": 0, "delta": {"content": "OK"}}]})
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: "
+                    + str(len(body)).encode()
+                    + b"\r\nConnection: close\r\n\r\n"
+                    + body
+                )
+            await writer.drain()
+            writer.close()
+
+        self.server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        return f"http://127.0.0.1:{self.server.sockets[0].getsockname()[1]}"
+
+    async def __aexit__(self, *exc: object) -> None:
+        self.server.close()
+        await self.server.wait_closed()
+
+
+@pytest.mark.anyio
+async def test_azure_calls_are_tunnelled_through_llm_proxy() -> None:
+    async with _RecordingProxy() as proxy_url:
+        client = OpenAIChatClient(make_settings(**AZURE, LLM_PROXY_URL=proxy_url))
+        assert client.route.startswith("via proxy 127.0.0.1:")
+        with pytest.raises(LlmError) as info:
+            async for _ in client.stream([{"role": "user", "content": "hi"}], []):
+                pass
+    assert "proxy" in str(info.value) and "secret-key" not in str(info.value)
+
+
+@pytest.mark.anyio
+async def test_proxy_sees_connect_to_azure_host_only() -> None:
+    recorder = _RecordingProxy()
+    async with recorder as proxy_url:
+        client = OpenAIChatClient(make_settings(**AZURE, LLM_PROXY_URL=proxy_url))
+        with pytest.raises(LlmError):
+            async for _ in client.stream([{"role": "user", "content": "hi"}], []):
+                pass
+    # TLS is tunnelled: the proxy only learns the host, never the path, key or prompt.
+    assert recorder.lines and all(line == "CONNECT demo.openai.azure.com:443 HTTP/1.1" for line in recorder.lines)
+
+
+@pytest.mark.anyio
+async def test_stream_works_end_to_end_through_proxy() -> None:
+    recorder = _RecordingProxy()
+    async with recorder as proxy_url:
+        settings = make_settings(
+            LLM_PROVIDER="openai_compatible",
+            OPENAI_COMPAT_BASE_URL="http://models.internal.example/v1",
+            OPENAI_COMPAT_API_KEY="k" * 20,
+            OPENAI_COMPAT_MODEL="gpt-4.1",
+            LLM_PROXY_URL=proxy_url,
+        )
+        text = ""
+        async for event in OpenAIChatClient(settings).stream([{"role": "user", "content": "hi"}], []):
+            if isinstance(event, TextDelta):
+                text += event.text
+    assert text == "OK"
+    assert recorder.lines[0].startswith("POST http://models.internal.example/v1/chat/completions")
+
+
+def test_direct_route_without_proxy() -> None:
+    assert OpenAIChatClient(make_settings(**AZURE)).route == "direct"

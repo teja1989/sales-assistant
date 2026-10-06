@@ -7,6 +7,7 @@ export interface AppConfig {
   tagline: string;
   oauth_required: boolean;
   llm: string;
+  llm_route?: string;
   live_configured: boolean;
   live_host: string | null;
   data_source_override: Source | null;

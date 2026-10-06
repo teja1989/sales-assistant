@@ -73,7 +73,7 @@ Starlette app ── /api/*  chat API ── Orchestrator ── Azure OpenAI (o
    │                                      │
    │                                      ├─ MCP client (in-process) ─► our MCP server (simulated APIs)
    │                                      └─ MCP client (HTTP + Authorization) ─► live MCP server
-   └── /mcp  the same MCP server over Streamable HTTP, bearer-token protected
+   └── /mcp  the same MCP server over Streamable HTTP (bearer token optional: MCP_AUTH_REQUIRED)
 ```
 
 Read more:

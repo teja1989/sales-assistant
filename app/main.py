@@ -117,6 +117,9 @@ async def api_config(request: Request) -> Response:
             "oauth_required": s.oauth_required,
             "tagline": s.tagline,
             "llm": ctx.llm.name,
+            # "direct" or "via proxy" only: the proxy host stays out of the browser.
+            "llm_route": "via proxy" if s.llm_proxy_url and s.llm_provider != "mock" else "direct",
+            "mcp_auth_required": s.mcp_auth_required,
             "live_configured": s.live_configured,
             "live_host": urlparse(s.live_mcp_url).hostname if s.live_configured else None,
             "data_source_override": s.data_source_override or None,
@@ -372,13 +375,15 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
             accounts.append(DemoAccount(cid, str(scenario.customer["first_name"]), plan, scenario.id, scenario.title))
         ctx.idp.set_accounts(accounts)
         log.info(
-            "Started %s v%s: env=%s llm=%s scenarios=%s live_mcp=%s",
+            "Started %s v%s: env=%s llm=%s (%s) scenarios=%s live_mcp=%s mcp_auth=%s",
             settings.app_name,
             __version__,
             settings.app_env,
             llm.name,
+            getattr(llm, "route", "local"),
             ",".join(ctx.scenarios),
             "configured" if settings.live_configured else "off",
+            "bearer" if settings.mcp_auth_required else "OFF",
         )
         async with mcp_server.session_manager.run():
             yield
@@ -415,9 +420,16 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
                 exclude=("/healthz", "/mcp"),
             )
         )
+    if settings.mcp_auth_required:
+        middleware.append(Middleware(BearerTokenMiddleware, prefix="/mcp", token=settings.mcp_server_token))
+    else:
+        log.warning("MCP_AUTH_REQUIRED=false: /mcp accepts requests without a token (rate limited)")
     middleware += [
-        Middleware(BearerTokenMiddleware, prefix="/mcp", token=settings.mcp_server_token),
-        Middleware(RateLimitMiddleware, per_minute=settings.rate_limit_per_minute),
+        Middleware(
+            RateLimitMiddleware,
+            per_minute=settings.rate_limit_per_minute,
+            extra_prefixes=() if settings.mcp_auth_required else ("/mcp",),
+        ),
         Middleware(BodySizeLimitMiddleware, max_bytes=32_768),
     ]
 
@@ -431,8 +443,15 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
     return app
 
 
+_app: Starlette | None = None
+
+
 def __getattr__(name: str) -> Any:
     # Lazy `app` so importing this module (e.g. in tests) doesn't require env config.
+    # Cached: uvicorn looks the attribute up more than once, and we want exactly one app.
+    global _app
     if name == "app":
-        return create_app()
+        if _app is None:
+            _app = create_app()
+        return _app
     raise AttributeError(name)

@@ -8,7 +8,7 @@ APP   ?= sales-assistant
 
 .DEFAULT_GOAL := help
 .PHONY: help setup venv web-install env dev run run-mock build-web test lint fmt typecheck-web check \
-        smoke mcp-inspect cf-secrets cf-push cf-logs clean
+        llm-check smoke mcp-inspect cf-secrets cf-push cf-logs clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-15s\033[0m %s\n",$$1,$$2}'
@@ -68,12 +68,15 @@ typecheck-web: ## Type-check the React app
 
 check: lint test typecheck-web build-web ## Everything CI runs
 
+llm-check: ## Check the model is reachable with your .env (direct or via LLM_PROXY_URL)
+	$(BIN)/python -m app.llm_check
+
 smoke: ## Smoke-test a running app (BASE_URL=... to target Cloud Foundry)
 	@bash scripts/smoke.sh
 
-mcp-inspect: ## Open MCP Inspector; connect to http://localhost:8000/mcp with your bearer token
+mcp-inspect: ## Open MCP Inspector; connect to http://localhost:8000/mcp
 	@echo "Transport: Streamable HTTP   URL: http://localhost:$(PORT)/mcp"
-	@echo "Header: Authorization: Bearer <MCP_SERVER_TOKEN from .env>"
+	@echo "Header (only if MCP_AUTH_REQUIRED=true): Authorization: Bearer <MCP_SERVER_TOKEN from .env>"
 	npx @modelcontextprotocol/inspector
 
 # ------------------------------------------------------------ cloud foundry

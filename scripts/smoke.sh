@@ -40,18 +40,22 @@ grep -q 'get_account_checkup' <<<"$STREAM" && pass "account checkup ran after si
 grep -q 'event: done' <<<"$STREAM" && pass "stream completed" || fail "stream incomplete"
 if grep -q 'event: error' <<<"$STREAM"; then fail "stream reported an error (check LLM settings)"; fi
 
-CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/mcp" -H 'Content-Type: application/json' -d '{}')"
-[[ "$CODE" == "401" ]] && pass "/mcp rejects requests without a token" || fail "/mcp returned $CODE without token"
-
-if [[ -n "${MCP_SERVER_TOKEN:-}" ]]; then
-  BODY="$(curl -s -X POST "$BASE_URL/mcp" -H "Authorization: Bearer $MCP_SERVER_TOKEN" \
-    -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}')"
-  if grep -q 'run_line_diagnostics' <<<"$BODY"; then
-    pass "/mcp lists tools with a valid token"
-  else
-    echo "  note: tools/list did not return the tool list (the server may require a protocol handshake first)."
-    echo "        Verify with: make mcp-inspect"
-  fi
+MCP_AUTH="$("${CURL[@]}" "$BASE_URL/api/config" | json "['mcp_auth_required']")"
+LIST='{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+MCP_H=(-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream')
+if [[ "$MCP_AUTH" == "True" ]]; then
+  CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/mcp" "${MCP_H[@]}" -d "$LIST")"
+  [[ "$CODE" == "401" ]] && pass "/mcp rejects requests without a token" || fail "/mcp returned $CODE without token"
+  AUTH_H=(-H "Authorization: Bearer ${MCP_SERVER_TOKEN:-}")
+else
+  echo "  note: /mcp auth is OFF (MCP_AUTH_REQUIRED=false); anyone who can reach the route can call it"
+  AUTH_H=()
+fi
+BODY="$(curl -s -X POST "$BASE_URL/mcp" "${AUTH_H[@]}" "${MCP_H[@]}" -d "$LIST")"
+if grep -q 'run_line_diagnostics' <<<"$BODY"; then
+  pass "/mcp lists tools"
+else
+  echo "  note: tools/list did not return the tool list (missing MCP_SERVER_TOKEN, or the server wants a handshake)."
+  echo "        Verify with: make mcp-inspect"
 fi
 echo "Done."

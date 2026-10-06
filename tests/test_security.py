@@ -141,3 +141,43 @@ def test_vcap_user_provided_service(monkeypatch) -> None:
 def test_pii_masking() -> None:
     text = mask_pii("mail jane@example.com call 415-555-0134 card 4111 1111 1111 1111 Bearer abcdefghijklmnop")
     assert "jane@" not in text and "555-0134" not in text and "4111" not in text and "abcdefghijklmnop" not in text
+
+
+# ------------------------------------------------- /mcp auth switch, LLM proxy
+def test_mcp_open_when_auth_disabled() -> None:
+    settings = make_settings(MCP_AUTH_REQUIRED="false")
+    assert settings.mcp_server_token == ""
+    with TestClient(create_app(settings)) as c:
+        res = c.post("/mcp", json=INIT, headers=MCP_HEADERS)
+        assert res.status_code != 401
+        assert c.get("/api/config").json()["mcp_auth_required"] is False
+
+
+def test_open_mcp_is_rate_limited() -> None:
+    settings = make_settings(MCP_AUTH_REQUIRED="false", RATE_LIMIT_PER_MINUTE="3")
+    with TestClient(create_app(settings)) as c:
+        codes = [c.post("/mcp", json=INIT, headers=MCP_HEADERS).status_code for _ in range(5)]
+        assert 429 in codes
+
+
+def test_mcp_token_not_required_outside_local_when_auth_off() -> None:
+    secret = "x" * 40
+    settings = make_settings(
+        APP_ENV="prod",
+        MCP_AUTH_REQUIRED="false",
+        MCP_SERVER_TOKEN="",
+        HANDOFF_SECRET=secret,
+        OAUTH_SIGNING_SECRET=secret,
+    )
+    assert settings.mcp_auth_required is False
+    with pytest.raises(ConfigError, match="MCP_SERVER_TOKEN"):
+        make_settings(APP_ENV="prod", MCP_SERVER_TOKEN="short", HANDOFF_SECRET=secret, OAUTH_SIGNING_SECRET=secret)
+
+
+def test_llm_proxy_settings_validated(tmp_path) -> None:
+    with pytest.raises(ConfigError, match="LLM_PROXY_URL"):
+        make_settings(LLM_PROXY_URL="proxy.corp:8080")
+    with pytest.raises(ConfigError, match="LLM_CA_BUNDLE"):
+        make_settings(LLM_CA_BUNDLE=str(tmp_path / "missing.pem"))
+    ok = make_settings(LLM_PROXY_URL="http://proxy.corp.example:8080")
+    assert ok.llm_proxy_url == "http://proxy.corp.example:8080"

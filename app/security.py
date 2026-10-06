@@ -126,16 +126,17 @@ class BasicAuthMiddleware:
 
 
 class RateLimitMiddleware:
-    """Token bucket per client IP for POST requests under /api."""
+    """Token bucket per client IP for POST requests under /api, /oauth (and /mcp when it is open)."""
 
-    def __init__(self, app: ASGIApp, per_minute: int) -> None:
+    def __init__(self, app: ASGIApp, per_minute: int, extra_prefixes: tuple[str, ...] = ()) -> None:
         self.app = app
+        self.prefixes = ("/api/", "/oauth/", *extra_prefixes)
         self.capacity = max(per_minute, 1)
         self.refill = self.capacity / 60.0
         self.buckets: dict[str, tuple[float, float]] = {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and scope["method"] == "POST" and scope["path"].startswith(("/api/", "/oauth/")):
+        if scope["type"] == "http" and scope["method"] == "POST" and scope["path"].startswith(self.prefixes):
             ip = client_ip(scope)
             now = time.monotonic()
             tokens, last = self.buckets.get(ip, (float(self.capacity), now))
