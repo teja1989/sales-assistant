@@ -6,7 +6,7 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 
 | Risk | Control | Where |
 |---|---|---|
-| Model reads or changes another customer's account (confused deputy) | `customer_id` removed from tool schemas; always injected from the session | `mcp_gateway.ToolSpec.llm_schema`, `orchestrator._execute` |
+| Model reads or changes another customer's account (confused deputy) | Account inputs (`customer_id`; in live mode any input named in `LIVE_CUSTOMER_PARAMS`) removed from tool schemas; always injected from the signed-in session | `mcp_gateway.ToolSpec.llm_schema`, `orchestrator._execute` |
 | Model takes an action the customer didn't want | Non-read-only tools become pending actions; they run only on a separate Confirm API call the model can't make; ids are single-use | `orchestrator._handle_calls`, `_handle_confirmation` |
 | Model invents an offer or discount ("free gig") | Orders accepted only for `offer_id`s returned by `get_eligible_offers` in this session; the backend re-validates eligibility | `orchestrator`, `sim.submit_order` |
 | Order placed without the customer seeing the price | When a scenario has `preview_order`, `submit_upgrade_order` is refused until that exact offer was previewed in the session; the confirm card shows the quoted totals | `orchestrator._handle_calls` |
@@ -46,5 +46,5 @@ Principle: **the prompt sets behaviour; code enforces anything that matters.** E
 
 1. Put the app behind corporate SSO (CF route service) or set `DEMO_BASIC_AUTH_*`.
 2. Turn `/mcp` auth on (`MCP_AUTH_REQUIRED=true`) with a 32+ char `MCP_SERVER_TOKEN` set via `cf set-env`, never in the manifest.
-3. With `LIVE_MCP_URL` set, actions go live too: use test accounts in `live_customer_id`, or keep action tools off the live server.
+3. In `DATA_MODE=live`, confirmed actions change the account typed at sign-in: use test accounts, and replace the mocked sign-in with real SSO before customers use it.
 4. Review Azure OpenAI's content filters and data-retention settings for customer data.

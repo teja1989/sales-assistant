@@ -264,9 +264,11 @@ export function Chat({ config }: { config: AppConfig | null }) {
         <div className="chat-context">
           {session && (
             <>
-              <span>
-                {session.customer.first_name}, {session.customer.plan}
-              </span>
+              {session.customer.first_name && (
+                <span>
+                  {session.customer.first_name}, {session.customer.plan}
+                </span>
+              )}
               <span className="chat-query">From search: “{session.search_query}”</span>
             </>
           )}

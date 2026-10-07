@@ -3,7 +3,8 @@
 The settings that matter (see .env.example); the same names locally and on Cloud Foundry:
     AZURE_OPENAI_ENDPOINT / _API_KEY / _DEPLOYMENT / _API_VERSION
                     Azure OpenAI via the official SDK (empty endpoint = offline mock model).
-    LIVE_MCP_URL    live MCP server for real data (empty = simulator for everything)
+    DATA_MODE       sim (default: built-in simulator, demo personas) | live (your MCP server only)
+    LIVE_MCP_URL    MCP server used when DATA_MODE=live
     LIVE_MCP_TOKEN  optional token for it (sent as Authorization: Bearer)
 Everything else has a sensible default; the optional knobs are listed in docs/configuration.md.
 
@@ -118,17 +119,6 @@ def _csv(value: str | None) -> list[str]:
     return [item.strip() for item in (value or "").split(",") if item.strip()]
 
 
-def _mapping(value: str | None) -> dict[str, str]:
-    """Parse 'a=b,c=d' into a dict."""
-    result: dict[str, str] = {}
-    for pair in _csv(value):
-        if "=" not in pair:
-            raise ConfigError(f"Expected key=value pairs, got {pair!r}")
-        key, _, val = pair.partition("=")
-        result[key.strip()] = val.strip()
-    return result
-
-
 @dataclass(frozen=True)
 class Settings:
     app_env: Literal["local", "dev", "prod", "test"] = "local"
@@ -158,11 +148,21 @@ class Settings:
     mcp_server_token: str = ""
     mcp_allowed_hosts: list[str] = field(default_factory=list)
 
-    # Live MCP server: when set, every tool call goes there first, falling back to the simulator.
+    # Data: "sim" = built-in simulator and demo personas; "live" = the MCP server at LIVE_MCP_URL only.
+    # In live mode the assistant uses whatever tools that server exposes, and the signed-in account
+    # number is injected into any input named in live_customer_params (hidden from the model).
+    data_mode: DataSource = "sim"
     live_mcp_url: str = ""
     live_mcp_token: str = ""
     live_mcp_timeout_s: float = 20.0
-    live_tool_map: dict[str, str] = field(default_factory=dict)  # optional renames: ours=theirs
+    live_customer_params: tuple[str, ...] = (
+        "customer_id",
+        "customerId",
+        "account_id",
+        "accountId",
+        "account_number",
+        "accountNumber",
+    )
 
     # Handoff + sessions (signing secrets are generated per process; sessions live in memory anyway)
     handoff_secret: str = ""
@@ -193,8 +193,12 @@ class Settings:
 
     @property
     def data_source(self) -> DataSource:
-        """Where tool calls go: everything live when a live MCP server is configured."""
-        return "live" if self.live_mcp_url else "sim"
+        """Where tool calls go (DATA_MODE)."""
+        return self.data_mode
+
+    @property
+    def live(self) -> bool:
+        return self.data_mode == "live"
 
     @property
     def is_local(self) -> bool:
@@ -241,10 +245,12 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         mcp_auth_required=mcp_auth,
         mcp_server_token=mcp_token,
         mcp_allowed_hosts=_csv(get("MCP_ALLOWED_HOSTS")),
+        data_mode=_data_mode(get("DATA_MODE")),
         live_mcp_url=_with_scheme((get("LIVE_MCP_URL") or "").strip()),
         live_mcp_token=(get("LIVE_MCP_TOKEN") or "").strip(),
         live_mcp_timeout_s=_float(get("LIVE_MCP_TIMEOUT_S"), 20.0),
-        live_tool_map=_mapping(get("LIVE_TOOL_MAP")),
+        live_customer_params=tuple(_csv(get("LIVE_CUSTOMER_PARAMS")))
+        or Settings.__dataclass_fields__["live_customer_params"].default,
         handoff_secret=secrets.token_urlsafe(32),
         oauth_signing_secret=secrets.token_urlsafe(32),
         oauth_required=_bool(get("OAUTH_REQUIRED"), True),
@@ -270,6 +276,18 @@ def _validate(s: Settings) -> None:
             parts = urlsplit(url)
             if parts.scheme not in ("http", "https") or not parts.hostname:
                 raise ConfigError(f"{name} must be a full URL, e.g. https://host.example.com/path")
+    if s.live:
+        problems = [
+            msg
+            for ok, msg in (
+                (s.live_mcp_url, "LIVE_MCP_URL (your MCP server)"),
+                (s.azure_openai_endpoint, "AZURE_OPENAI_* (the offline mock model only knows the simulator's tools)"),
+                (s.oauth_required, "OAUTH_REQUIRED=true (sign-in provides the account number)"),
+            )
+            if not ok
+        ]
+        if problems:
+            raise ConfigError(f"DATA_MODE=live needs {'; '.join(problems)}")
     if s.azure_openai_endpoint:
         missing = [
             name
@@ -290,6 +308,13 @@ def display_url(url: str) -> str:
     parts = urlsplit(url)
     port = f":{parts.port}" if parts.port else ""
     return f"{parts.scheme}://{parts.hostname}{port}{parts.path}"
+
+
+def _data_mode(value: str | None) -> DataSource:
+    mode = (value or "sim").strip().lower()
+    if mode not in ("sim", "live"):
+        raise ConfigError("DATA_MODE must be sim or live")
+    return mode  # type: ignore[return-value]
 
 
 def _with_scheme(url: str) -> str:

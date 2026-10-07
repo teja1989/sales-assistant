@@ -28,9 +28,9 @@ from typing import Any
 from app.config import Settings
 from app.guardrails import check_prices, collect_amounts, redact, truncate_for_model
 from app.llm.base import LlmClient, LlmError, TextDelta, ToolCall, TurnComplete
-from app.mcp_gateway import McpGateway, ToolOutcome, ToolSpec
+from app.mcp_gateway import McpGateway, ToolOutcome, ToolSpec, _root_cause
 from app.metrics import Metrics
-from app.prompts import KICKOFF_MESSAGE
+from app.prompts import KICKOFF_MESSAGE, LIVE_KICKOFF_MESSAGE
 from app.sessions import PendingAction, Session
 
 log = logging.getLogger(__name__)
@@ -53,6 +53,8 @@ class Orchestrator:
 
     # --------------------------------------------------------------- helpers
     def _specs(self, session: Session) -> dict[str, ToolSpec]:
+        if self.settings.live:
+            return self.gateway.live_specs  # whatever the live MCP server exposes
         specs = self.gateway.specs
         names = list(session.scenario.tools)
         if CHECKUP_TOOL in specs and CHECKUP_TOOL not in names:
@@ -72,10 +74,14 @@ class Orchestrator:
             raise ValueError("arguments were not valid JSON") from exc
         if not isinstance(args, dict):
             raise ValueError("arguments must be a JSON object")
-        allowed = set(spec.input_schema.get("properties", {})) - {"customer_id"}
+        allowed = set(spec.input_schema.get("properties", {})) - set(spec.hidden)
         return {k: v for k, v in args.items() if k in allowed}
 
     def _action_summary(self, session: Session, tool: str, args: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        if self.settings.live:
+            spec = self.gateway.live_specs.get(tool)
+            first_sentence = (spec.description if spec else "").strip().split(". ")[0].rstrip(".")
+            return (first_sentence or f"Run {tool} on your account") + ".", dict(args)
         if tool == "reboot_gateway":
             return "You'll be offline for about 2 minutes while it restarts.", {}
         if tool == "schedule_technician":
@@ -151,13 +157,10 @@ class Orchestrator:
 
     async def _execute(self, session: Session, spec: ToolSpec, args: dict[str, Any]) -> ToolOutcome:
         source = self._source(session, spec.name)
-        full_args = {**args, "customer_id": session.customer_id_for(source)}
-        return await self.gateway.call(
-            source,
-            spec.name,
-            full_args,  # type: ignore[arg-type]
-            sim_customer_id=session.customer_id,
-        )
+        account = session.customer_id_for(source)
+        # The account always comes from the signed-in session, never from the model.
+        full_args = {**args, **dict.fromkeys(spec.hidden, account)}
+        return await self.gateway.call(source, spec.name, full_args)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------ main entry
     async def run_turn(
@@ -170,13 +173,24 @@ class Orchestrator:
     ) -> AsyncIterator[Event]:
         yield {"type": "turn_start"}
         try:
+            if self.settings.live:
+                try:
+                    await self.gateway.refresh_live_specs()
+                except Exception as exc:  # noqa: BLE001 - the live server may be down; answer honestly
+                    log.warning("Live MCP tool listing failed: %s", _root_cause(exc))
+                    if not self.gateway.live_specs:
+                        yield {
+                            "type": "notice",
+                            "message": "I can't reach the account system right now, so I can't look anything up.",
+                        }
             if confirmation is not None:
                 async for event in self._handle_confirmation(session, confirmation):
                     yield event
             elif kickoff:
                 async for event in self._proactive_checkup(session):
                     yield event
-                session.messages.append({"role": "user", "content": KICKOFF_MESSAGE})
+                kickoff_text = LIVE_KICKOFF_MESSAGE if self.settings.live else KICKOFF_MESSAGE
+                session.messages.append({"role": "user", "content": kickoff_text})
             elif user_text is not None:
                 session.messages.append({"role": "user", "content": user_text})
 
@@ -227,7 +241,10 @@ class Orchestrator:
         if pending is None:
             yield {"type": "notice", "message": "That request already expired or was handled."}
             return
-        spec = self.gateway.specs[pending.tool]
+        spec = self._specs(session).get(pending.tool) or self.gateway.specs.get(pending.tool)
+        if spec is None:
+            yield {"type": "notice", "message": "That action is no longer available."}
+            return
         call_id = f"call_{secrets.token_hex(6)}"
         session.messages.append(
             {

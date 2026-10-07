@@ -71,43 +71,17 @@ async def test_without_live_url_everything_is_simulated() -> None:
 
 
 @pytest.mark.anyio
-async def test_live_tool_missing_on_server_falls_back_to_sim(monkeypatch) -> None:
-    gw = _gw_with_customer(LIVE_MCP_URL="https://live.example.com/mcp")
-    assert gw.settings.data_source == "live"
-
-    async def listing() -> list[str]:
-        return ["some_other_tool"]
-
-    monkeypatch.setattr(gw, "list_live_tools", listing)
-    out = await gw.call("live", "get_customer_profile", {"customer_id": "LIVE-9"}, sim_customer_id="C-1")
-    assert out.source == "sim" and out.fallback and out.data["first_name"] == "T"
-    assert "not on the live server" in out.meta["fallback_reason"]
-
-
-@pytest.mark.anyio
-async def test_live_error_or_outage_falls_back_to_sim(monkeypatch) -> None:
-    from app.mcp_gateway import ToolOutcome
-
-    gw = _gw_with_customer(LIVE_MCP_URL="https://live.example.com/mcp")
-
-    async def listing() -> list[str]:
-        return ["get_customer_profile"]
-
-    async def live_error(name, arguments, started):  # noqa: ANN001
-        return ToolOutcome(name, "live", {"error": "customer not found"}, True, 5, error="not_found")
+async def test_live_failure_is_reported_never_replaced_with_sim(monkeypatch) -> None:
+    gw = _gw_with_customer(DATA_MODE="sim", LIVE_MCP_URL="https://live.example.com/mcp")
 
     async def live_down(name, arguments, started):  # noqa: ANN001
         raise ConnectionError("connection refused")
 
-    monkeypatch.setattr(gw, "list_live_tools", listing)
-    monkeypatch.setattr(gw, "_call_live", live_error)
-    out = await gw.call("live", "get_customer_profile", {"customer_id": "LIVE-9"}, sim_customer_id="C-1")
-    assert out.source == "sim" and out.fallback and "live returned an error" in out.meta["fallback_reason"]
-
     monkeypatch.setattr(gw, "_call_live", live_down)
-    out = await gw.call("live", "get_customer_profile", {"customer_id": "LIVE-9"}, sim_customer_id="C-1")
-    assert out.source == "sim" and out.fallback and "live call failed" in out.meta["fallback_reason"]
-    assert gw._live_tools is None  # re-list after an outage
+    out = await gw.call("live", "get_customer_profile", {"customer_id": "C-1"})
+    assert out.source == "live" and out.is_error and not out.fallback
+    assert "first_name" not in out.data  # no simulated data slipped in
+    assert "unavailable" in out.data["error"] and "ConnectionError" in (out.error or "")
 
 
 @pytest.mark.anyio
@@ -118,16 +92,38 @@ async def test_live_success_is_used(monkeypatch) -> None:
     assert gw._live_headers()["Authorization"] == "Bearer abc"
     assert _gw_with_customer(LIVE_MCP_TOKEN="Basic xyz")._live_headers()["Authorization"] == "Basic xyz"
 
-    async def listing() -> list[str]:
-        return ["get_customer_profile"]
-
     async def live_ok(name, arguments, started):  # noqa: ANN001
         return ToolOutcome(name, "live", {"first_name": "Real"}, False, 5)
 
-    monkeypatch.setattr(gw, "list_live_tools", listing)
     monkeypatch.setattr(gw, "_call_live", live_ok)
-    out = await gw.call("live", "get_customer_profile", {"customer_id": "LIVE-9"}, sim_customer_id="C-1")
-    assert out.source == "live" and not out.fallback and out.data["first_name"] == "Real"
+    out = await gw.call("live", "getAccount", {"accountId": "A-1"})
+    assert out.source == "live" and not out.is_error and out.data["first_name"] == "Real"
+
+
+def test_live_tool_specs_from_server_listing() -> None:
+    from types import SimpleNamespace as NS
+
+    gw = _gw_with_customer(LIVE_MCP_URL="https://live.example.com/mcp")
+    read = gw._live_spec(
+        NS(
+            name="getAccount",
+            title=None,
+            description="Account summary.",
+            input_schema={
+                "type": "object",
+                "properties": {"accountId": {"type": "string"}, "include": {"type": "string"}},
+                "required": ["accountId"],
+            },
+            annotations=NS(title="Account summary", read_only_hint=True),
+        )
+    )
+    assert read.read_only and read.hidden == ("accountId",) and read.title == "Account summary"
+    schema = read.llm_schema()["function"]["parameters"]
+    assert "accountId" not in schema["properties"] and schema["required"] == []  # model never sees the account
+    action = gw._live_spec(
+        NS(name="submitOrder", title=None, description="", input_schema={"properties": {}}, annotations=None)
+    )
+    assert not action.read_only and action.hidden == ()  # unmarked tools need Confirm
 
 
 @pytest.mark.anyio

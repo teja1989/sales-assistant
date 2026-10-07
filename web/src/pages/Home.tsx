@@ -42,12 +42,12 @@ export function Home({ config }: { config: AppConfig | null }) {
           {config && (
             <p className="runtime">
               Model: <strong>{config.llm === "mock" ? "offline mock" : "Azure OpenAI"}</strong>. Data:{" "}
-              <strong>{config.live_configured ? `live MCP (${config.live_host}), simulator as fallback` : "simulator"}</strong>.
+              <strong>{config.data_source === "live" ? `live MCP (${config.live_host})` : "simulator"}</strong>.
             </p>
           )}
         </section>
 
-        <DemoLauncher scenarios={scenarios} />
+        <DemoLauncher scenarios={scenarios} live={config?.data_source === "live"} />
       </main>
     </div>
   );
@@ -68,7 +68,7 @@ const INTENT_LABEL: Record<string, string> = {
  * tells the full story (external search → handoff → sign-in); "Skip to sign-in" jumps straight to the
  * chat's sign-in step with the matching account preselected.
  */
-function DemoLauncher({ scenarios }: { scenarios: ScenarioView[] }) {
+function DemoLauncher({ scenarios, live }: { scenarios: ScenarioView[]; live: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,10 +87,11 @@ function DemoLauncher({ scenarios }: { scenarios: ScenarioView[] }) {
   return (
     <section className="launcher" aria-labelledby="launcher-heading">
       <div className="launcher-head">
-        <h2 id="launcher-heading">Demo launcher</h2>
+        <h2 id="launcher-heading">{live ? "Start a conversation" : "Demo launcher"}</h2>
         <p>
-          Each card is a simulated customer signed in with their own account. Run them top to bottom to follow the
-          demo script.
+          {live
+            ? "Live data: each card starts from a typical search, and you sign in with a real (or test) account number. Answers come from your MCP server."
+            : "Each card is a simulated customer signed in with their own account. Run them top to bottom to follow the demo script."}
         </p>
       </div>
       {error && (
@@ -105,11 +106,11 @@ function DemoLauncher({ scenarios }: { scenarios: ScenarioView[] }) {
             <li key={s.id} className="persona-card">
               <div className="persona-top">
                 <span className={`persona-badge tone-${i % 5}`} aria-hidden="true">
-                  {name.charAt(0)}
+                  {live ? "•" : name.charAt(0)}
                 </span>
                 <div className="persona-who">
-                  <strong>{name}</strong>
-                  <span>{s.persona?.plan}</span>
+                  <strong>{live ? "Your account" : name}</strong>
+                  <span>{live ? "Live data" : s.persona?.plan}</span>
                 </div>
                 <span className="persona-step" aria-label={`Step ${i + 1}`}>
                   {i + 1}
@@ -117,7 +118,7 @@ function DemoLauncher({ scenarios }: { scenarios: ScenarioView[] }) {
               </div>
               <span className="persona-tag">{INTENT_LABEL[s.intent] ?? s.intent}</span>
               <h3>{s.title}</h3>
-              <p className="persona-desc">{s.description}</p>
+              {!live && <p className="persona-desc">{s.description}</p>}
               <p className="persona-query">“{s.search_query}”</p>
               <div className="persona-actions">
                 <Link to={`/search?scenario=${encodeURIComponent(s.id)}`} className="btn btn-primary btn-sm">

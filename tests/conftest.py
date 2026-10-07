@@ -20,6 +20,7 @@ TEST_ENV = {
     "MCP_AUTH_REQUIRED": "true",  # most security tests exercise /mcp with auth on
     "MCP_SERVER_TOKEN": "test-mcp-token-0123456789abcdef",
     "RATE_LIMIT_PER_MINUTE": "1000",
+    "DATA_MODE": "sim",
     "LIVE_MCP_URL": "",
     "LIVE_MCP_TOKEN": "",
     "DEMO_BASIC_AUTH_USER": "",

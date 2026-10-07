@@ -41,7 +41,8 @@ For the real model and live data, set these in `.env` (empty = built-in simulati
 AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com   # official Azure OpenAI SDK
 AZURE_OPENAI_API_KEY=<key>
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
-LIVE_MCP_URL=https://<api-host>/mcp                          # optional; live data, simulator as fallback
+DATA_MODE=sim                                                # live = your MCP server instead of the simulator
+LIVE_MCP_URL=https://<api-host>/mcp                          # used when DATA_MODE=live
 LIVE_MCP_TOKEN=<token>                                       # optional
 ```
 

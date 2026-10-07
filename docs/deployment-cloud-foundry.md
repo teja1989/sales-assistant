@@ -14,7 +14,8 @@ cf set-env sales-assistant AZURE_OPENAI_ENDPOINT    https://<resource>.openai.az
 cf set-env sales-assistant AZURE_OPENAI_API_KEY     <key>
 cf set-env sales-assistant AZURE_OPENAI_DEPLOYMENT  gpt-4.1
 cf set-env sales-assistant AZURE_OPENAI_API_VERSION 2024-10-21
-# optional live data:
+# optional live data (your MCP server instead of the simulator):
+cf set-env sales-assistant DATA_MODE      live
 cf set-env sales-assistant LIVE_MCP_URL   https://<api-host>/mcp
 cf set-env sales-assistant LIVE_MCP_TOKEN <token>
 

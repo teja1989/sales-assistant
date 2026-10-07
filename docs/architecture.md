@@ -59,7 +59,10 @@ flowchart LR
 
 ## Data-source routing
 
-One rule for every tool: with `LIVE_MCP_URL` set, calls go to the live server first; otherwise to our in-process simulator. The live path falls back to the simulator when the live server doesn't list the tool, can't be reached, or returns an error; the UI badges those cards **sim (fallback)** with the reason, so the demo never silently fakes live data. Live calls carry `Authorization: Bearer <LIVE_MCP_TOKEN>` and the scenario's `live_customer_id` when set.
+`DATA_MODE` decides, for the whole app:
+
+- **sim:** tools are our in-process MCP simulator; the scenario's allowlist picks which ones the model sees.
+- **live:** tools are discovered from `LIVE_MCP_URL` (`tools/list`, refreshed every 5 minutes and after failures). Each becomes a read (`readOnlyHint: true`) or an action (needs Confirm). Inputs named like an account id are filled from the signed-in session and removed from the model's schema. Failures come back as tool errors; nothing falls back to simulated data. The UI badges every card with its source.
 
 ## Why the model never sees `customer_id`
 

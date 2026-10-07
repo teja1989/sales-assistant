@@ -1,12 +1,12 @@
-"""Routes tool calls to the right MCP server: simulated (in-process) or live (HTTP).
+"""Routes tool calls to the MCP server for the current DATA_MODE.
 
 Both paths speak real MCP through the official SDK client:
-* sim  -> `Client(MCPServer)`: in-process MCP dispatch to our own server.
-* live -> `Client(streamable_http_client(url))`: an external MCP server, with an
-  Authorization header from LIVE_MCP_TOKEN ("Bearer <token>" unless it already has a scheme).
+* sim  -> `Client(MCPServer)`: in-process MCP dispatch to our own simulator.
+* live -> `Client(streamable_http_client(url))`: your MCP server, with an Authorization header
+  from LIVE_MCP_TOKEN ("Bearer <token>" unless it already has a scheme).
 
-Live tool names can differ from ours; LIVE_TOOL_MAP renames them
-(e.g. "get_customer_profile=getAccountSummary").
+In live mode the tools are whatever that server lists (name, description, input schema,
+readOnlyHint), refreshed every few minutes. There is no fallback to simulated data.
 """
 
 from __future__ import annotations
@@ -38,11 +38,15 @@ class ToolSpec:
     description: str
     input_schema: dict[str, Any]
     read_only: bool
+    # Inputs filled by the server from the signed-in account; removed from what the model sees.
+    hidden: tuple[str, ...] = ("customer_id",)
 
-    def llm_schema(self, hidden_params: tuple[str, ...] = ("customer_id",)) -> dict[str, Any]:
+    def llm_schema(self) -> dict[str, Any]:
         """OpenAI tool schema with server-injected params removed (the model never sees them)."""
         schema = json.loads(json.dumps(self.input_schema))
-        props = schema.get("properties", {})
+        schema.setdefault("type", "object")
+        props = schema.setdefault("properties", {})
+        hidden_params = self.hidden
         for param in hidden_params:
             props.pop(param, None)
         schema["required"] = [r for r in schema.get("required", []) if r not in hidden_params]
@@ -102,8 +106,8 @@ class McpGateway:
         self.settings = settings
         self.sim_server = sim_server
         self._specs: dict[str, ToolSpec] = {}
-        self._live_tools: set[str] | None = None
-        self._live_tools_at = 0.0
+        self._live_specs: dict[str, ToolSpec] = {}
+        self._live_specs_at = 0.0
 
     # ----------------------------------------------------------- discovery
     async def load_specs(self) -> dict[str, ToolSpec]:
@@ -134,43 +138,56 @@ class McpGateway:
             listing = await client.list_tools()
         return [t.name for t in listing.tools]
 
-    # ---------------------------------------------------------------- calls
-    async def call(
-        self, source: Source, name: str, arguments: dict[str, Any], sim_customer_id: str | None = None
-    ) -> ToolOutcome:
-        """Call a tool. Live first when configured; the simulator answers whenever the live server
-        doesn't have the tool, can't be reached, or returns an error. The simulator gets
-        `sim_customer_id` because live and simulated customer ids can differ."""
-        started = time.perf_counter()
-        sim_arguments = {**arguments, "customer_id": sim_customer_id} if sim_customer_id else arguments
-        if source != "live" or not self.settings.live_configured:
-            return await self._call_sim(name, sim_arguments if source == "live" else arguments, started)
-        reason = ""
-        try:
-            remote = self.settings.live_tool_map.get(name, name)
-            if remote not in await self._live_tool_names():
-                reason = f"tool {remote!r} not on the live server"
-            else:
-                outcome = await self._call_live(name, arguments, started)
-                if not outcome.is_error:
-                    return outcome
-                reason = f"live returned an error ({outcome.error or 'tool error'})"
-        except Exception as exc:  # noqa: BLE001 - network/protocol errors from a remote system
-            reason = f"live call failed ({_root_cause(exc)})"
-            self._live_tools = None  # re-list next time; the server may have changed or restarted
-        log.warning("Live MCP %s: %s; answering from the simulator", name, reason)
-        outcome = await self._call_sim(name, sim_arguments, time.perf_counter())
-        outcome.fallback = True
-        outcome.meta["fallback_reason"] = reason
-        return outcome
-
-    async def _live_tool_names(self) -> set[str]:
-        """Live tool list, cached for a few minutes so each call doesn't re-list."""
+    async def refresh_live_specs(self, force: bool = False) -> dict[str, ToolSpec]:
+        """Discover the live server's tools (cached for a few minutes). On failure keep the last list."""
         now = time.monotonic()
-        if self._live_tools is None or now - self._live_tools_at > LIVE_TOOLS_TTL_S:
-            self._live_tools = set(await self.list_live_tools())
-            self._live_tools_at = now
-        return self._live_tools
+        if not force and self._live_specs and now - self._live_specs_at < LIVE_TOOLS_TTL_S:
+            return self._live_specs
+        async with self._live_client() as client:
+            listing = await client.list_tools()
+        self._live_specs = {t.name: self._live_spec(t) for t in listing.tools}
+        self._live_specs_at = now
+        return self._live_specs
+
+    def _live_spec(self, tool: Any) -> ToolSpec:
+        schema = tool.input_schema if isinstance(tool.input_schema, dict) else {"type": "object", "properties": {}}
+        props = schema.get("properties") or {}
+        annotations = tool.annotations
+        return ToolSpec(
+            name=tool.name,
+            title=(annotations.title if annotations and annotations.title else None) or tool.title or tool.name,
+            description=tool.description or "",
+            input_schema=schema,
+            # Unmarked tools are treated as actions: they need the customer's Confirm.
+            read_only=bool(annotations and annotations.read_only_hint),
+            hidden=tuple(p for p in self.settings.live_customer_params if p in props),
+        )
+
+    @property
+    def live_specs(self) -> dict[str, ToolSpec]:
+        return self._live_specs
+
+    # ---------------------------------------------------------------- calls
+    async def call(self, source: Source, name: str, arguments: dict[str, Any]) -> ToolOutcome:
+        """Call a tool on the simulator or the live server. Live failures are reported as tool
+        errors (shown to the customer honestly), never replaced with simulated data."""
+        started = time.perf_counter()
+        if source != "live":
+            return await self._call_sim(name, arguments, started)
+        try:
+            return await self._call_live(name, arguments, started)
+        except Exception as exc:  # noqa: BLE001 - network/protocol errors from a remote system
+            reason = _root_cause(exc)
+            log.warning("Live MCP call %s failed: %s", name, reason)
+            self._live_specs_at = 0.0  # re-list next turn; the server may have changed or restarted
+            return ToolOutcome(
+                name,
+                "live",
+                {"error": "The account system is unavailable right now."},
+                True,
+                int((time.perf_counter() - started) * 1000),
+                error=reason,
+            )
 
     async def _call_sim(self, name: str, arguments: dict[str, Any], started: float) -> ToolOutcome:
         async with Client(self.sim_server) as client:
@@ -191,14 +208,10 @@ class McpGateway:
         return _LiveClient(self.settings.live_mcp_url, self._live_headers(), self.settings.live_mcp_timeout_s)
 
     async def _call_live(self, name: str, arguments: dict[str, Any], started: float) -> ToolOutcome:
-        remote_name = self.settings.live_tool_map.get(name, name)
         async with self._live_client() as client:
-            result = await client.call_tool(remote_name, arguments)
+            result = await client.call_tool(name, arguments)
         data, is_error, error = _parse_result(result)
-        outcome = ToolOutcome(name, "live", data, is_error, int((time.perf_counter() - started) * 1000), error=error)
-        if remote_name != name:
-            outcome.meta["remote_tool"] = remote_name
-        return outcome
+        return ToolOutcome(name, "live", data, is_error, int((time.perf_counter() - started) * 1000), error=error)
 
 
 class _LiveClient:

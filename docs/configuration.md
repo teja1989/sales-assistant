@@ -15,19 +15,15 @@ Same settings locally and on Cloud Foundry; the app calls Azure OpenAI directly 
 | `AZURE_OPENAI_API_KEY` | Key for that resource (sent by the SDK as the `api-key` header) | required with an endpoint |
 | `AZURE_OPENAI_DEPLOYMENT` | Deployment name, e.g. `gpt-4.1` (not always the model name) | required with an endpoint |
 | `AZURE_OPENAI_API_VERSION` | Default `2024-10-21` | default used |
-| `LIVE_MCP_URL` | Your MCP server for real data, e.g. `https://api.example.com/mcp` | Simulator for every tool |
+| `DATA_MODE` | `sim` (simulator, demo personas) or `live` (your MCP server only; see [live-mcp.md](live-mcp.md)) | `sim` |
+| `LIVE_MCP_URL` | Your MCP server, used when `DATA_MODE=live`, e.g. `https://api.example.com/mcp` | required for live |
 | `LIVE_MCP_TOKEN` | Token for it, sent as `Authorization: Bearer <token>` (a value with its own scheme, e.g. `Basic xyz`, is sent as given) | No token sent |
 
 The app uses the official **Azure OpenAI Python SDK** (`openai` package, `AsyncAzureOpenAI`), which requests `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=...` with streaming and tools. `make llm-check` makes a plain call and a tool call (the assistant needs tools).
 
-### How live data is used
+### Live data
 
-When `LIVE_MCP_URL` is set, **every** tool call goes there first. The simulator answers instead, and the trace shows **sim (fallback)** with the reason, when the live server:
-- doesn't have that tool (the tool list is cached for 5 minutes),
-- can't be reached, or
-- returns an error (e.g. customer not found).
-
-Scenario files can map a demo customer to a real or test account with `live_customer_id` (see [live-mcp.md](live-mcp.md)).
+With `DATA_MODE=live` the assistant uses whatever tools your MCP server lists; the signed-in account number is filled into the account input of every call; tools not marked read-only need the customer's Confirm; failures are reported, never replaced with simulated data. Details and what your server should provide: [live-mcp.md](live-mcp.md).
 
 ## Optional knobs
 
@@ -39,7 +35,7 @@ You shouldn't need these for the demo. All have defaults.
 | `LLM_REASONING_EFFORT` | not sent | `low` / `medium` / `high` for reasoning models; `low` gives faster chat replies |
 | `LLM_MAX_TOKENS`, `LLM_MAX_TOKENS_PARAM` | 4000, `max_completion_tokens` | Includes hidden reasoning tokens, so keep it generous. Use `max_tokens` only for old models/API versions that reject `max_completion_tokens` |
 | `LLM_TIMEOUT_S` | 60 | Request timeout |
-| `LIVE_TOOL_MAP` | empty | Rename tools for the live server: `ours=theirs,ours2=theirs2` |
+| `LIVE_CUSTOMER_PARAMS` | `customer_id,customerId,account_id,accountId,account_number,accountNumber` | Live tool inputs filled with the signed-in account (hidden from the model) |
 | `LIVE_MCP_TIMEOUT_S` | 20 | Live call timeout |
 | `MCP_AUTH_REQUIRED`, `MCP_SERVER_TOKEN` | false, empty | Require `Authorization: Bearer <token>` on our own `/mcp` (32+ chars outside local). Turn on before exposing `/mcp` |
 | `MCP_ALLOWED_HOSTS` | empty | Host-header allowlist for `/mcp` |

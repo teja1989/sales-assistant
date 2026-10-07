@@ -8,9 +8,10 @@ A scenario is one YAML file in `scenarios/`. No code changes. It is loaded at st
 2. Change `id` (lowercase slug), `title`, `description`, `search_query`, `match_keywords`.
 3. Give the customer a **unique** `customer.id` and set the fixture data that drives the diagnosis.
 4. List the `tools` the assistant may use. Only these are visible to the model.
-5. Optionally set `live_customer_id` to a real/test account for when `LIVE_MCP_URL` is configured.
 6. Set `expected` so the test knows what "good" looks like.
 7. `make test`, then restart the app (or let `make dev` reload it).
+
+Scenarios drive the simulator demo (`DATA_MODE=sim`). In live mode only their search phrases, intent and suggested replies are used.
 
 ## Fields
 
@@ -24,7 +25,6 @@ A scenario is one YAML file in `scenarios/`. No code changes. It is loaded at st
 | `match_keywords` | Words/phrases that route a typed search to this scenario (phrases score higher) |
 | `assistant_brief` | Extra guidance appended to the system prompt |
 | `tools` | Allowlist of MCP tools |
-| `live_customer_id` | Account id sent to the live MCP server when `LIVE_MCP_URL` is set (the simulator uses its own clone id) |
 | `suggested_replies` | Quick-reply chips in the chat |
 | `customer` | Simulated fixture (see below) |
 | `expected` | `must_call`, `must_not_call`, `confirm_action`, `outcome` |

@@ -131,11 +131,17 @@ async def api_scenarios(request: Request) -> Response:
     items = []
     for sc in in_demo_order(ctx.scenarios):
         view = sc.public_view()
-        view["data_sources"] = {t: ctx.settings.data_source for t in sc.tools}
-        # Demo persona for the launcher: first name and plan only, never ids or contact data.
-        view["persona"] = {"first_name": str(sc.customer["first_name"]), "plan": _plan_name(ctx, sc)}
+        view["data_sources"] = {t: ctx.settings.data_source for t in _tool_names(ctx, sc)}
+        if not ctx.settings.live:
+            # Demo persona for the launcher: first name and plan only, never ids or contact data.
+            view["persona"] = {"first_name": str(sc.customer["first_name"]), "plan": _plan_name(ctx, sc)}
         items.append(view)
     return JSONResponse({"scenarios": items})
+
+
+def _tool_names(ctx: AppState, scenario: Scenario) -> list[str]:
+    """Tools the assistant can use: the live server's in live mode, else the scenario's simulator tools."""
+    return list(ctx.gateway.live_specs) if ctx.settings.live else list(scenario.tools)
 
 
 def _plan_name(ctx: AppState, scenario: Scenario) -> str:
@@ -183,14 +189,20 @@ async def api_create_session(request: Request) -> Response:
     if scenario is None:
         return JSONResponse({"error": "unknown_scenario"}, 404)
     # The signed-in account decides whose data we see, never the URL or the scenario.
-    fixture = ctx.customers.get(claims["sub"]) if claims else scenario.customer
-    if fixture is None:
-        return JSONResponse({"error": "unknown_account"}, 401)
-    customer_id = ctx.store.add_customer(fixture, clone=True)
+    if ctx.settings.live:
+        account = str(claims["sub"]) if claims else ""
+        if not account:
+            return JSONResponse({"error": "sign_in_required", "message": "Please sign in to continue."}, 401)
+        customer_id, live_account = account, account
+    else:
+        fixture = ctx.customers.get(claims["sub"]) if claims else scenario.customer
+        if fixture is None:
+            return JSONResponse({"error": "unknown_account"}, 401)
+        customer_id, live_account = ctx.store.add_customer(fixture, clone=True), None
     session, _ = ctx.sessions.create(
         scenario=scenario,
         customer_id=customer_id,
-        live_customer_id=scenario.live_customer_id,
+        live_customer_id=live_account,
         search_query=handoff.search_query,
     )
     if claims:
@@ -210,16 +222,20 @@ async def api_create_session(request: Request) -> Response:
         }
     )
     ctx.metrics.session_started(session.id, scenario.id)
-    profile = ctx.store.customer_profile(customer_id)
+    if ctx.settings.live:
+        customer = {"first_name": "", "plan": ""}  # the assistant reads real details through the live tools
+    else:
+        profile = ctx.store.customer_profile(customer_id)
+        customer = {"first_name": profile["first_name"], "plan": profile["plan"]["name"]}
     return JSONResponse(
         {
             "session_id": session.id,
             "scenario": {
                 **scenario.public_view(),
-                "data_sources": {t: ctx.settings.data_source for t in scenario.tools},
+                "data_sources": {t: ctx.settings.data_source for t in _tool_names(ctx, scenario)},
             },
             "search_query": handoff.search_query,
-            "customer": {"first_name": profile["first_name"], "plan": profile["plan"]["name"]},
+            "customer": customer,
             "access": {
                 "connected": bool(claims),
                 "can_make_changes": "account:manage" in session.scopes,
@@ -290,22 +306,30 @@ async def api_metrics_reset(request: Request) -> Response:
 
 
 async def api_live_check(request: Request) -> Response:
+    """What the live MCP server exposes and how Tidelink will use it (no account data)."""
     ctx = _state(request)
     if not ctx.settings.live_configured:
-        return JSONResponse({"configured": False})
+        return JSONResponse({"configured": False, "data_mode": ctx.settings.data_mode})
     try:
-        tools = await ctx.gateway.list_live_tools()
+        specs = await ctx.gateway.refresh_live_specs(force=True)
     except Exception as exc:  # noqa: BLE001
         reason = _root_cause(exc)
         log.warning("Live MCP check failed: %s", reason)
         return JSONResponse({"configured": True, "reachable": False, "error": reason}, 502)
-    mapped = {ours: ctx.settings.live_tool_map.get(ours, ours) for ours in ctx.gateway.specs}
     return JSONResponse(
         {
             "configured": True,
             "reachable": True,
-            "remote_tools": tools,
-            "missing_for_our_tools": sorted(o for o, r in mapped.items() if r not in tools),
+            "data_mode": ctx.settings.data_mode,
+            "tools": [
+                {
+                    "name": s.name,
+                    "kind": "read" if s.read_only else "action (needs Confirm)",
+                    "account_inputs_filled_by_tidelink": list(s.hidden),
+                    "inputs_from_model": sorted(set(s.input_schema.get("properties", {})) - set(s.hidden)),
+                }
+                for s in specs.values()
+            ],
         }
     )
 
@@ -370,14 +394,21 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
             plan = store.plan(scenario.customer["plan_id"])["name"]
             accounts.append(DemoAccount(cid, str(scenario.customer["first_name"]), plan, scenario.id, scenario.title))
         ctx.idp.set_accounts(accounts)
+        ctx.idp.free_account_entry = settings.live
+        if settings.live:
+            try:
+                live = await gateway.refresh_live_specs(force=True)
+                log.info("Live MCP tools: %s", ", ".join(live) or "(none)")
+            except Exception as exc:  # noqa: BLE001 - start anyway; each turn retries
+                log.warning("Live MCP server not reachable at startup: %s", _root_cause(exc))
         log.info(
-            "Started %s v%s: env=%s llm=%s scenarios=%s live_mcp=%s mcp_auth=%s",
+            "Started %s v%s: env=%s llm=%s scenarios=%s data=%s mcp_auth=%s",
             settings.app_name,
             __version__,
             settings.app_env,
             llm.name,
             ",".join(ctx.scenarios),
-            display_url(settings.live_mcp_url) if settings.live_configured else "off (simulator)",
+            f"live {display_url(settings.live_mcp_url)}" if settings.live else "sim",
             "bearer" if settings.mcp_auth_required else "OFF",
         )
         async with mcp_server.session_manager.run():

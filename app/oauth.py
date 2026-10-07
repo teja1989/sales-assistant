@@ -16,6 +16,7 @@ import base64
 import hashlib
 import hmac
 import html
+import re
 import secrets
 import threading
 import time
@@ -46,6 +47,9 @@ class OAuthError(Exception):
         self.error = error
         self.description = description
         self.status = status
+
+
+ACCOUNT_NUMBER = re.compile(r"[A-Za-z0-9_\-]{1,64}")
 
 
 @dataclass
@@ -82,6 +86,8 @@ class MockIdentityProvider:
         self._revoked: dict[str, float] = {}
         self._lock = threading.Lock()
         self.accounts: dict[str, DemoAccount] = {}
+        # Live data mode: the sign-in is still simulated, but the person types a real account number.
+        self.free_account_entry = False
 
     # ------------------------------------------------------------ accounts
     def set_accounts(self, accounts: list[DemoAccount]) -> None:
@@ -121,7 +127,10 @@ class MockIdentityProvider:
             raise OAuthError("invalid_token", "This account connection was disconnected.", 401)
         if REQUIRED_SCOPE not in str(claims.get("scope", "")).split():
             raise OAuthError("insufficient_scope", "Viewing your account wasn't allowed.", 403)
-        if claims["sub"] not in self.accounts:
+        known = (
+            ACCOUNT_NUMBER.fullmatch(str(claims["sub"])) if self.free_account_entry else claims["sub"] in self.accounts
+        )
+        if not known:
             raise OAuthError("invalid_token", "Unknown account.", 401)
         return claims
 
@@ -171,9 +180,8 @@ class MockIdentityProvider:
         )
         hint = params.get("login_hint", "").removeprefix("scenario:")
         requested = params.get("scope", "").split()
-        return HTMLResponse(
-            _consent_page(list(self.accounts.values()), hint, requested, signed), headers={"Cache-Control": "no-store"}
-        )
+        accounts = None if self.free_account_entry else list(self.accounts.values())
+        return HTMLResponse(_consent_page(accounts, hint, requested, signed), headers={"Cache-Control": "no-store"})
 
     async def authorize_submit(self, request: Request) -> Response:
         form = await request.form()
@@ -191,9 +199,15 @@ class MockIdentityProvider:
             return RedirectResponse(
                 f"{redirect_uri}?{urlencode({'error': 'access_denied', 'state': params['state']})}", 303
             )
-        account = self.accounts.get(str(form.get("account", "")))
-        if account is None:
-            return _error_page("Please choose an account.", 400)
+        entered = str(form.get("account", "")).strip()
+        if self.free_account_entry:
+            if not ACCOUNT_NUMBER.fullmatch(entered):
+                return _error_page("Please enter a valid account number (letters, digits, - or _).", 400)
+            account = DemoAccount(entered, "", "", "")
+        else:
+            account = self.accounts.get(entered)  # type: ignore[assignment]
+            if account is None:
+                return _error_page("Please choose an account.", 400)
         granted = [REQUIRED_SCOPE]
         if "account:manage" in params.get("scope", "").split() and form.get("allow_manage") == "on":
             granted.append("account:manage")
@@ -247,7 +261,7 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-s
 main{max-width:440px;margin:6vh auto;background:#fff;border:1px solid #e1e3e8;border-radius:14px;padding:28px}
 h1{font-size:20px;margin:0 0 4px}p{color:#525a6b;line-height:1.5}
 label{display:block;font-weight:600;margin:18px 0 6px}
-select{width:100%;font:inherit;padding:10px;border:1px solid #cfd3db;border-radius:8px;background:#fff}
+select,#account{width:100%;box-sizing:border-box;font:inherit;padding:10px;border:1px solid #cfd3db;border-radius:8px;background:#fff}
 fieldset{border:1px solid #e1e3e8;border-radius:10px;margin:18px 0 0;padding:12px 14px}
 legend{font-weight:600;padding:0 4px}
 .scope{display:flex;gap:10px;align-items:flex-start;margin:8px 0;font-weight:400}
@@ -259,7 +273,8 @@ button.allow{background:#1d2330;color:#fff;border-color:#1d2330}
 """
 
 
-def _consent_page(accounts: list[DemoAccount], hint: str, requested: list[str], signed: str) -> str:
+def _consent_page(accounts: list[DemoAccount] | None, hint: str, requested: list[str], signed: str) -> str:
+    """`accounts=None` (live data mode) shows an account-number field instead of the demo personas."""
     esc = html.escape
 
     def label(a: DemoAccount) -> str:
@@ -270,9 +285,24 @@ def _consent_page(accounts: list[DemoAccount], hint: str, requested: list[str], 
             text += " (matches this search)"
         return esc(text)
 
-    options = "".join(
-        f'<option value="{esc(a.subject)}"{" selected" if a.hint == hint else ""}>{label(a)}</option>' for a in accounts
-    )
+    if accounts is None:
+        picker = (
+            '<label for="account">Account number</label>'
+            '<input id="account" name="account" required maxlength="64" autocomplete="off" '
+            'pattern="[A-Za-z0-9_\\-]{1,64}" placeholder="e.g. a test account">'
+            '<p class="small">Live data: Tidelink will use this account with your MCP server. '
+            "Use a test account unless you mean to work on a real one.</p>"
+        )
+    else:
+        options = "".join(
+            f'<option value="{esc(a.subject)}"{" selected" if a.hint == hint else ""}>{label(a)}</option>'
+            for a in accounts
+        )
+        picker = (
+            f'<label for="account">Account (demo)</label><select id="account" name="account">{options}</select>'
+            '<p class="small">Preselected to match the search. Pick another customer to see how Tidelink answers '
+            "the same question with their account; the signed-in account always decides whose data is shown.</p>"
+        )
     manage = ""
     if "account:manage" in requested:
         manage = (
@@ -288,10 +318,7 @@ def _consent_page(accounts: list[DemoAccount], hint: str, requested: list[str], 
 <p>Tidelink, your provider's assistant, is asking to connect to your account.</p>
 <form method="post" action="/oauth/authorize/consent">
 <input type="hidden" name="request" value="{esc(signed)}">
-<label for="account">Account (demo)</label>
-<select id="account" name="account">{options}</select>
-<p class="small">Preselected to match the search. Pick another customer to see how Tidelink answers the same
-question with their account; the signed-in account always decides whose data is shown.</p>
+{picker}
 <fieldset><legend>Tidelink will be able to</legend>
 <label class="scope"><input type="checkbox" checked disabled> <span>{esc(SCOPES["account:read"])} (required)</span></label>
 {manage}
