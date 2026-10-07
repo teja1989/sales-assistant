@@ -346,10 +346,10 @@ function Result({ tool, data }: { tool: string; data: Json }) {
   );
 }
 
-export function SourceBadge({ source, fallback }: { source: string; fallback?: boolean }) {
+export function SourceBadge({ source, fallback, system }: { source: string; fallback?: boolean; system?: string | null }) {
   return (
     <span className={`source source-${source}`} title={fallback ? "Live source unavailable; used simulator" : undefined}>
-      {fallback ? "sim (fallback)" : source}
+      {fallback ? "sim (fallback)" : system ? `live · ${system}` : source}
     </span>
   );
 }
@@ -361,7 +361,7 @@ export function ToolCard({ item }: { item: ToolItem }) {
       <div className="tool-head">
         <span className="tool-dot" aria-hidden="true" />
         <span className="tool-title">{FRIENDLY_TOOL[item.tool]?.title ?? item.title}</span>
-        <SourceBadge source={item.source} fallback={item.fallback} />
+        <SourceBadge source={item.source} fallback={item.fallback} system={item.group} />
         {item.status === "running" ? (
           <span className="tool-meta">working…</span>
         ) : (

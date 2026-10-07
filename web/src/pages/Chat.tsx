@@ -7,7 +7,7 @@ import { BrandMark } from "../components/BrandMark";
 import { ConfirmCard } from "../components/ConfirmCard";
 import { SourceBadge, ToolCard } from "../components/ToolCard";
 import { Markdown } from "../markdown";
-import type { AppConfig, ChatItem, ServerEvent, SessionInfo } from "../types";
+import type { SystemView, AppConfig, ChatItem, ServerEvent, SessionInfo } from "../types";
 
 let seq = 0;
 const uid = () => `i${++seq}`;
@@ -47,6 +47,7 @@ function reducer(items: ChatItem[], action: Action): ChatItem[] {
         data: e.data,
         latency: e.latency_ms,
         fallback: e.fallback,
+        group: e.group,
       };
       const idx = items.findIndex((i) => i.kind === "tool" && i.id === e.call_id);
       if (idx === -1) return [...items, updated];
@@ -81,6 +82,12 @@ export function Chat({ config }: { config: AppConfig | null }) {
   const [fatal, setFatal] = useState<string | null>(null);
   const [items, dispatch] = useReducer(reducer, []);
   const [busy, setBusy] = useState(false);
+  const [systems, setSystems] = useState<SystemView[]>([]);
+  useEffect(() => {
+    // Live mode: show every connected MCP system; refresh after each turn so call counts move.
+    if (busy || config?.data_source !== "live") return;
+    api.systems().then(setSystems).catch(() => undefined);
+  }, [busy, config?.data_source]);
   const [draft, setDraft] = useState("");
   const [showTrace, setShowTrace] = useState(false);
   const started = useRef(false);
@@ -404,23 +411,28 @@ export function Chat({ config }: { config: AppConfig | null }) {
               {tools.map((t) => (
                 <li key={t.id} className={`trace-step trace-${t.status}`}>
                   <span className="trace-name">{t.tool}</span>
-                  <SourceBadge source={t.source} fallback={t.fallback} />
+                  <SourceBadge source={t.source} fallback={t.fallback} system={t.group} />
                   <span className="trace-latency">{t.status === "running" ? "…" : `${t.latency} ms`}</span>
                 </li>
               ))}
             </ol>
           )}
+          {session && systems.length > 0 && <ConnectedSystems systems={systems} />}
           {session && (
             <>
-              <h3>Data sources</h3>
-              <ul className="sources">
-                {Object.entries(session.scenario.data_sources).map(([tool, src]) => (
-                  <li key={tool}>
-                    <span>{tool}</span>
-                    <SourceBadge source={src} />
-                  </li>
-                ))}
-              </ul>
+              {systems.length === 0 && (
+                <>
+                  <h3>Data sources</h3>
+                  <ul className="sources">
+                    {Object.entries(session.scenario.data_sources).map(([tool, src]) => (
+                      <li key={tool}>
+                        <span>{tool}</span>
+                        <SourceBadge source={src} />
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
               <p className="trace-foot">
                 Scenario: {session.scenario.title}
                 <br />
@@ -431,5 +443,47 @@ export function Chat({ config }: { config: AppConfig | null }) {
         </aside>
       </div>
     </div>
+  );
+}
+
+function ConnectedSystems({ systems }: { systems: SystemView[] }) {
+  const toolCount = systems.reduce((n, s) => n + s.tools.length, 0);
+  return (
+    <section className="systems" aria-label="Connected systems">
+      <h3>Connected systems</h3>
+      <p className="trace-intro">
+        {systems.length} MCP {systems.length === 1 ? "server" : "servers"}, {toolCount} tools. Adding a system is one line
+        of config.
+      </p>
+      <ul>
+        {systems.map((s) => {
+          const reads = s.tools.filter((t) => t.kind === "read").length;
+          return (
+            <li key={s.name} className={`system system-${s.reachable === false ? "down" : "up"}`}>
+              <div className="system-head">
+                <span className="system-dot" aria-hidden="true" />
+                <strong>{s.name}</strong>
+                <span className="system-host">{s.host}</span>
+              </div>
+              {s.reachable === false && <p className="system-error">Unavailable: {s.error}</p>}
+              <p className="system-meta">
+                {s.tools.length} {s.tools.length === 1 ? "tool" : "tools"} ({reads} lookups, {s.tools.length - reads}{" "}
+                actions)
+                {s.calls > 0 && (
+                  <>
+                    {" "}
+                    · {s.calls} {s.calls === 1 ? "call" : "calls"} · avg {s.avg_ms} ms
+                    {s.errors > 0 ? ` · ${s.errors} ${s.errors === 1 ? "error" : "errors"}` : ""}
+                  </>
+                )}
+              </p>
+              {s.groups.length > 1 || (s.groups[0] && s.groups[0] !== s.name) ? (
+                <p className="system-groups">Teams: {s.groups.join(", ")}</p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

@@ -42,7 +42,7 @@ AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com   # official Azure Ope
 AZURE_OPENAI_API_KEY=<key>
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
 DATA_MODE=sim                                                # live = your MCP server instead of the simulator
-LIVE_MCP_URL=https://<api-host>/mcp                          # used when DATA_MODE=live
+LIVE_MCP_URL=https://<api-host>/mcp                          # used when DATA_MODE=live (more: LIVE_MCP_SERVERS)
 LIVE_MCP_TOKEN=<token>                                       # optional
 ```
 

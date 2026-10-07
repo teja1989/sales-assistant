@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from typing import Any
+
 import pytest
 
 from app.config import ROOT_DIR
@@ -70,60 +73,156 @@ async def test_without_live_url_everything_is_simulated() -> None:
     assert out.source == "sim" and not out.fallback and out.data["first_name"] == "T"
 
 
-@pytest.mark.anyio
-async def test_live_failure_is_reported_never_replaced_with_sim(monkeypatch) -> None:
-    gw = _gw_with_customer(DATA_MODE="sim", LIVE_MCP_URL="https://live.example.com/mcp")
-
-    async def live_down(name, arguments, started):  # noqa: ANN001
-        raise ConnectionError("connection refused")
-
-    monkeypatch.setattr(gw, "_call_live", live_down)
-    out = await gw.call("live", "get_customer_profile", {"customer_id": "C-1"})
-    assert out.source == "live" and out.is_error and not out.fallback
-    assert "first_name" not in out.data  # no simulated data slipped in
-    assert "unavailable" in out.data["error"] and "ConnectionError" in (out.error or "")
-
-
-@pytest.mark.anyio
-async def test_live_success_is_used(monkeypatch) -> None:
-    from app.mcp_gateway import ToolOutcome
-
-    gw = _gw_with_customer(LIVE_MCP_URL="https://live.example.com/mcp", LIVE_MCP_TOKEN="abc")
-    assert gw._live_headers()["Authorization"] == "Bearer abc"
-    assert _gw_with_customer(LIVE_MCP_TOKEN="Basic xyz")._live_headers()["Authorization"] == "Basic xyz"
-
-    async def live_ok(name, arguments, started):  # noqa: ANN001
-        return ToolOutcome(name, "live", {"first_name": "Real"}, False, 5)
-
-    monkeypatch.setattr(gw, "_call_live", live_ok)
-    out = await gw.call("live", "getAccount", {"accountId": "A-1"})
-    assert out.source == "live" and not out.is_error and out.data["first_name"] == "Real"
-
-
-def test_live_tool_specs_from_server_listing() -> None:
+def _tool(name: str, props: dict | None = None, description: str = "") -> Any:
     from types import SimpleNamespace as NS
 
-    gw = _gw_with_customer(LIVE_MCP_URL="https://live.example.com/mcp")
-    read = gw._live_spec(
-        NS(
-            name="getAccount",
-            title=None,
-            description="Account summary.",
-            input_schema={
-                "type": "object",
-                "properties": {"accountId": {"type": "string"}, "include": {"type": "string"}},
-                "required": ["accountId"],
-            },
-            annotations=NS(title="Account summary", read_only_hint=True),
+    return NS(
+        name=name,
+        title=None,
+        description=description,
+        input_schema={"type": "object", "properties": props or {}},
+        annotations=None,  # we never rely on server annotations
+    )
+
+
+def _gw_live(listings: dict[str, list], **env: str) -> McpGateway:
+    """Gateway over fake live servers: listings = {server_name: [tools]}."""
+    servers = ",".join(f"{n}=https://{n}.example.com/mcp" for n in listings)
+    gw = _gw_with_customer(DATA_MODE="sim", LIVE_MCP_SERVERS=servers, **env)
+
+    async def list_server(server):  # noqa: ANN001
+        tools = listings[server.name]
+        if isinstance(tools, Exception):
+            raise tools
+        return [gw._live_spec(server.name, t) for t in tools]
+
+    gw._list_server = list_server
+    return gw
+
+
+def test_read_or_action_from_tool_name_with_overrides() -> None:
+    gw = _gw_with_customer(LIVE_READ_TOOLS="runDiagnostics", LIVE_ACTION_TOOLS="getAndResetToken")
+    kinds = {
+        n: gw._live_spec("s", _tool(n)).read_only
+        for n in (
+            "getAccount",
+            "get_customer_profile",
+            "listOrders",
+            "check_area_outage",
+            "searchOffers",
+            "sales.getOffers",
+            "orders__viewOrder",
+            "submitOrder",
+            "rebootGateway",
+            "applyCredit",
+            "runDiagnostics",
+            "getAndResetToken",
         )
+    }
+    assert kinds == {
+        "getAccount": True,
+        "get_customer_profile": True,
+        "listOrders": True,
+        "check_area_outage": True,
+        "searchOffers": True,
+        "sales.getOffers": True,
+        "orders__viewOrder": True,
+        "submitOrder": False,
+        "rebootGateway": False,
+        "applyCredit": False,
+        "runDiagnostics": True,  # override: lookup
+        "getAndResetToken": False,  # override: action
+    }
+
+
+@pytest.mark.anyio
+async def test_many_servers_merge_into_one_toolset() -> None:
+    gw = _gw_live(
+        {
+            "orders": [_tool("getOrder", {"accountId": {}}), _tool("getStatus")],
+            "sales": [_tool("getOffers", {"customer_id": {}}), _tool("getStatus")],
+            "gateway": [_tool("billing.getBill"), _tool("billing/payBill"), _tool("support:openTicket")],
+        }
     )
-    assert read.read_only and read.hidden == ("accountId",) and read.title == "Account summary"
-    schema = read.llm_schema()["function"]["parameters"]
-    assert "accountId" not in schema["properties"] and schema["required"] == []  # model never sees the account
-    action = gw._live_spec(
-        NS(name="submitOrder", title=None, description="", input_schema={"properties": {}}, annotations=None)
+    specs = await gw.refresh_live_specs(force=True)
+    # Unique, model-safe names; clashing names are prefixed with their server.
+    assert set(specs) == {
+        "getOrder",
+        "orders__getStatus",
+        "getOffers",
+        "sales__getStatus",
+        "billing_getBill",
+        "billing_payBill",
+        "support_openTicket",
+    }
+    assert all(re.fullmatch(r"[A-Za-z0-9_-]{1,64}", n) for n in specs)
+    # Each tool remembers its server and real name; gateway prefixes become teams.
+    assert (specs["orders__getStatus"].server, specs["orders__getStatus"].remote_name) == ("orders", "getStatus")
+    assert (specs["billing_payBill"].server, specs["billing_payBill"].remote_name) == ("gateway", "billing/payBill")
+    assert specs["billing_getBill"].group == "billing" and specs["support_openTicket"].group == "support"
+    assert specs["getOrder"].group == "orders"
+    assert specs["getOrder"].hidden == ("accountId",) and specs["getOffers"].hidden == ("customer_id",)
+    systems = {s["name"]: s for s in gw.systems()}
+    assert systems["gateway"]["groups"] == ["billing", "support"] and len(systems["orders"]["tools"]) == 2
+
+
+@pytest.mark.anyio
+async def test_one_server_down_keeps_the_others() -> None:
+    gw = _gw_live({"orders": [_tool("getOrder")], "sales": ConnectionError("refused")})
+    specs = await gw.refresh_live_specs(force=True)
+    assert set(specs) == {"getOrder"}
+    systems = {s["name"]: s for s in gw.systems()}
+    assert systems["orders"]["reachable"] is True and systems["sales"]["reachable"] is False
+    assert "ConnectionError" in systems["sales"]["error"]
+    with pytest.raises(ConnectionError):
+        await _gw_live({"a": ConnectionError("x")}).refresh_live_specs(force=True)
+
+
+@pytest.mark.anyio
+async def test_calls_route_to_the_owning_server_and_are_counted() -> None:
+    from app.mcp_gateway import ToolOutcome
+
+    gw = _gw_live({"orders": [_tool("getStatus")], "sales": [_tool("getStatus")]})
+    await gw.refresh_live_specs(force=True)
+    seen = []
+
+    async def call_live(spec, arguments, started):  # noqa: ANN001
+        seen.append((spec.server, spec.remote_name))
+        if spec.server == "sales":
+            raise ConnectionError("refused")
+        return ToolOutcome(spec.name, "live", {"ok": True}, False, 7)
+
+    gw._call_live = call_live
+    ok = await gw.call("live", "orders__getStatus", {})
+    down = await gw.call("live", "sales__getStatus", {})
+    assert seen == [("orders", "getStatus"), ("sales", "getStatus")]
+    assert ok.meta == {"server": "orders", "group": "orders"} and not ok.is_error
+    assert down.is_error and "sales system is unavailable" in down.data["error"]  # never simulated data
+    systems = {s["name"]: s for s in gw.systems()}
+    assert systems["orders"]["calls"] == 1 and systems["orders"]["avg_ms"] == 7
+    assert systems["sales"]["errors"] == 1 and systems["sales"]["reachable"] is False
+
+
+def test_per_server_tokens_and_config() -> None:
+    from app.config import ConfigError
+
+    gw = _gw_with_customer(
+        LIVE_MCP_URL="https://one.example.com/mcp",
+        LIVE_MCP_NAME="Orders",
+        LIVE_MCP_TOKEN="abc",
+        LIVE_MCP_SERVERS="sales=https://sales.example.com/mcp, billing=billing.example.com/mcp",
+        LIVE_MCP_TOKEN_SALES="Basic xyz",
     )
-    assert not action.read_only and action.hidden == ()  # unmarked tools need Confirm
+    servers = {s.name: s for s in gw.settings.live_servers}
+    assert set(servers) == {"orders", "sales", "billing"}
+    assert gw._live_headers(servers["orders"])["Authorization"] == "Bearer abc"
+    assert gw._live_headers(servers["sales"])["Authorization"] == "Basic xyz"
+    assert "Authorization" not in gw._live_headers(servers["billing"])
+    assert servers["billing"].url == "https://billing.example.com/mcp"
+    with pytest.raises(ConfigError, match="unique"):
+        _gw_with_customer(LIVE_MCP_SERVERS="a=https://a.example.com/mcp,a=https://b.example.com/mcp")
+    with pytest.raises(ConfigError, match="name=url"):
+        _gw_with_customer(LIVE_MCP_SERVERS="https://a.example.com/mcp")
 
 
 @pytest.mark.anyio

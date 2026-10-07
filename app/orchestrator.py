@@ -150,6 +150,8 @@ class Orchestrator:
             "title": spec.title,
             "source": outcome.source,
             "fallback": outcome.fallback,
+            "server": outcome.meta.get("server"),
+            "group": outcome.meta.get("group"),
             "latency_ms": outcome.latency_ms,
             "is_error": outcome.is_error,
             "data": redact(outcome.data),

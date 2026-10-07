@@ -33,36 +33,38 @@ LIVE_TOOLS = [
         title=None,
         description="Account summary for the customer.",
         input_schema={"type": "object", "properties": {"accountId": {"type": "string"}}, "required": ["accountId"]},
-        annotations=NS(title="Account summary", read_only_hint=True),
+        annotations=None,
     ),
     NS(
         name="restartModem",
         title=None,
         description="Restart the customer's modem remotely. Takes about two minutes.",
         input_schema={"type": "object", "properties": {"accountId": {"type": "string"}, "reason": {"type": "string"}}},
-        annotations=NS(title="Restart modem", read_only_hint=False),
+        annotations=None,
     ),
 ]
 
 
 class FakeLiveServer:
+    """Stands in for the network at the gateway boundary; listing and call routing are real."""
+
     def __init__(self, fail: bool = False) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.fail = fail
 
     def install(self, gateway) -> None:  # noqa: ANN001
-        async def refresh(force: bool = False):
-            gateway._live_specs = {t.name: gateway._live_spec(t) for t in LIVE_TOOLS}
-            return gateway._live_specs
+        async def list_server(server):  # noqa: ANN001
+            return [gateway._live_spec(server.name, t) for t in LIVE_TOOLS]
 
-        async def call_live(name, arguments, started):  # noqa: ANN001
-            self.calls.append((name, arguments))
+        async def call_live(spec, arguments, started):  # noqa: ANN001
+            self.calls.append((spec.remote_name, arguments))
             if self.fail:
                 raise ConnectionError("refused")
-            return ToolOutcome(name, "live", {"status": "ok", "plan": "Real Gig"}, False, 3)
+            return ToolOutcome(spec.name, "live", {"status": "ok", "plan": "Real Gig"}, False, 3)
 
-        gateway.refresh_live_specs = refresh
+        gateway._list_server = list_server
         gateway._call_live = call_live
+        gateway._live_specs_at = 0.0
 
 
 def _sign_in_with_account(c, account: str) -> str:  # noqa: ANN001
@@ -118,8 +120,8 @@ def test_live_mode_reads_use_signed_in_account_and_actions_need_confirm() -> Non
     ]
     client, llm = scripted_client(script, **LIVE)
     live = FakeLiveServer()
+    live.install(client.app.state.ctx.gateway)  # before startup: no real network
     with client as c:
-        live.install(c.app.state.ctx.gateway)
         sid = _start(c)
         events = turn(c, sid, {"message": "my internet keeps dropping"})
 
@@ -162,8 +164,8 @@ def test_live_confirmed_action_runs_with_account() -> None:
     script = [("Restarting needs your OK.", [("restartModem", {"reason": "drops"})]), ("Restarted.", [])]
     client, _ = scripted_client(script, **LIVE)
     live = FakeLiveServer()
+    live.install(client.app.state.ctx.gateway)  # before startup: no real network
     with client as c:
-        live.install(c.app.state.ctx.gateway)
         sid = _start(c, "ACC-1")
         events = turn(c, sid, {"message": "restart it"})
         action_id = next(e for e in events if e["type"] == "confirm_required")["action_id"]
@@ -175,8 +177,8 @@ def test_live_confirmed_action_runs_with_account() -> None:
 def test_live_outage_is_an_honest_error_not_sim_data() -> None:
     client, _ = scripted_client([("Checking.", [("getAccountSummary", {})]), ("It's down.", [])], **LIVE)
     live = FakeLiveServer(fail=True)
+    live.install(client.app.state.ctx.gateway)  # before startup: no real network
     with client as c:
-        live.install(c.app.state.ctx.gateway)
         sid = _start(c)
         events = turn(c, sid, {"message": "what plan am I on"})
     result = next(e for e in events if e["type"] == "tool_result")
@@ -185,6 +187,7 @@ def test_live_outage_is_an_honest_error_not_sim_data() -> None:
 
 def test_live_sign_in_rejects_bad_account_numbers() -> None:
     client, _ = scripted_client([], **LIVE)
+    FakeLiveServer().install(client.app.state.ctx.gateway)
     with client as c:
         verifier = secrets.token_urlsafe(48)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
@@ -206,6 +209,7 @@ def test_live_sign_in_rejects_bad_account_numbers() -> None:
 
 def test_live_mode_hides_personas_and_reports_data_mode() -> None:
     client, _ = scripted_client([], **LIVE)
+    FakeLiveServer().install(client.app.state.ctx.gateway)
     with client as c:
         items = c.get("/api/scenarios").json()["scenarios"]
         assert items and all("persona" not in s for s in items)

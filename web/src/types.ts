@@ -10,6 +10,7 @@ export interface AppConfig {
   live_configured: boolean;
   live_host: string | null;
   data_source: Source;
+  live_servers?: string[];
   version: string;
 }
 
@@ -47,6 +48,8 @@ export type ServerEvent =
       title: string;
       source: Source;
       fallback: boolean;
+      server?: string | null;
+      group?: string | null;
       latency_ms: number;
       is_error: boolean;
       data: Json;
@@ -71,6 +74,7 @@ export type ChatItem =
       data?: Json;
       latency?: number;
       fallback?: boolean;
+      group?: string | null;
     }
   | {
       kind: "confirm";
@@ -123,4 +127,16 @@ export interface Metrics {
   by_scenario: Record<string, Record<string, number>>;
   recent_events: { ts: number; kind: string; scenario: string | null; detail: string }[];
   note: string;
+}
+
+export interface SystemView {
+  name: string;
+  host: string;
+  reachable: boolean | null;
+  error: string | null;
+  tools: { name: string; group: string; kind: "read" | "action" }[];
+  groups: string[];
+  calls: number;
+  errors: number;
+  avg_ms: number | null;
 }

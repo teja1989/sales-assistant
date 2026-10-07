@@ -1,4 +1,4 @@
-import type { AppConfig, Metrics, ScenarioView, ServerEvent, SessionInfo } from "./types";
+import type { AppConfig, Metrics, ScenarioView, ServerEvent, SessionInfo, SystemView } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -36,6 +36,7 @@ export const api = {
   disconnect: (sessionId: string) =>
     request<{ disconnected: boolean }>(`/api/sessions/${encodeURIComponent(sessionId)}/disconnect`, { method: "POST" }),
   metrics: () => request<Metrics>("/api/metrics"),
+  systems: () => request<{ data_mode: string; systems: SystemView[] }>("/api/systems").then((r) => r.systems),
   resetMetrics: () => request<{ reset: boolean }>("/api/metrics/reset", { method: "POST" }),
 };
 

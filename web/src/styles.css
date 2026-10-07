@@ -1725,3 +1725,68 @@ a {
     white-space: nowrap;
   }
 }
+
+/* ---------- connected MCP systems (live mode) ---------- */
+.systems {
+  margin-bottom: 18px;
+}
+
+.systems ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.system {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  background: var(--paper);
+}
+
+.system-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.system-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+
+.system-down .system-dot {
+  background: var(--fault);
+}
+
+.system-host {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.system-meta,
+.system-groups,
+.system-error {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.system-error {
+  color: var(--fault);
+}
+
+.trace-step .source {
+  white-space: nowrap;
+}

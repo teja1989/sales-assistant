@@ -15,15 +15,16 @@ Same settings locally and on Cloud Foundry; the app calls Azure OpenAI directly 
 | `AZURE_OPENAI_API_KEY` | Key for that resource (sent by the SDK as the `api-key` header) | required with an endpoint |
 | `AZURE_OPENAI_DEPLOYMENT` | Deployment name, e.g. `gpt-4.1` (not always the model name) | required with an endpoint |
 | `AZURE_OPENAI_API_VERSION` | Default `2024-10-21` | default used |
-| `DATA_MODE` | `sim` (simulator, demo personas) or `live` (your MCP server only; see [live-mcp.md](live-mcp.md)) | `sim` |
-| `LIVE_MCP_URL` | Your MCP server, used when `DATA_MODE=live`, e.g. `https://api.example.com/mcp` | required for live |
-| `LIVE_MCP_TOKEN` | Token for it, sent as `Authorization: Bearer <token>` (a value with its own scheme, e.g. `Basic xyz`, is sent as given) | No token sent |
+| `DATA_MODE` | `sim` (simulator, demo personas) or `live` (your MCP servers only; see [live-mcp.md](live-mcp.md)) | `sim` |
+| `LIVE_MCP_URL` | An MCP server used when `DATA_MODE=live`, e.g. `https://api.example.com/mcp` (`LIVE_MCP_NAME` labels it) | |
+| `LIVE_MCP_SERVERS` | More servers: `sales=https://.../mcp,billing=https://.../mcp`; tokens in `LIVE_MCP_TOKEN_<NAME>` | |
+| `LIVE_MCP_TOKEN` | Token for `LIVE_MCP_URL`, sent as `Authorization: Bearer <token>` (a value with its own scheme, e.g. `Basic xyz`, is sent as given) | No token sent |
 
 The app uses the official **Azure OpenAI Python SDK** (`openai` package, `AsyncAzureOpenAI`), which requests `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=...` with streaming and tools. `make llm-check` makes a plain call and a tool call (the assistant needs tools).
 
 ### Live data
 
-With `DATA_MODE=live` the assistant uses whatever tools your MCP server lists; the signed-in account number is filled into the account input of every call; tools not marked read-only need the customer's Confirm; failures are reported, never replaced with simulated data. Details and what your server should provide: [live-mcp.md](live-mcp.md).
+With `DATA_MODE=live` the assistant uses whatever tools your MCP servers list, with no changes on them. Several servers (or one org gateway) combine into one toolset; lookups vs actions come from tool names; the signed-in account number fills each tool's account input; failures are reported, never replaced with simulated data. Details: [live-mcp.md](live-mcp.md).
 
 ## Optional knobs
 
@@ -35,6 +36,7 @@ You shouldn't need these for the demo. All have defaults.
 | `LLM_REASONING_EFFORT` | not sent | `low` / `medium` / `high` for reasoning models; `low` gives faster chat replies |
 | `LLM_MAX_TOKENS`, `LLM_MAX_TOKENS_PARAM` | 4000, `max_completion_tokens` | Includes hidden reasoning tokens, so keep it generous. Use `max_tokens` only for old models/API versions that reject `max_completion_tokens` |
 | `LLM_TIMEOUT_S` | 60 | Request timeout |
+| `LIVE_READ_TOOLS`, `LIVE_ACTION_TOOLS` | empty | Override the name rule for lookups vs actions, per tool |
 | `LIVE_CUSTOMER_PARAMS` | `customer_id,customerId,account_id,accountId,account_number,accountNumber` | Live tool inputs filled with the signed-in account (hidden from the model) |
 | `LIVE_MCP_TIMEOUT_S` | 20 | Live call timeout |
 | `MCP_AUTH_REQUIRED`, `MCP_SERVER_TOKEN` | false, empty | Require `Authorization: Bearer <token>` on our own `/mcp` (32+ chars outside local). Turn on before exposing `/mcp` |

@@ -120,6 +120,7 @@ async def api_config(request: Request) -> Response:
             "mcp_auth_required": s.mcp_auth_required,
             "live_configured": s.live_configured,
             "live_host": urlparse(s.live_mcp_url).hostname if s.live_configured else None,
+            "live_servers": [srv.name for srv in s.live_servers] if s.live else [],
             "data_source": s.data_source,
             "version": __version__,
         }
@@ -306,24 +307,27 @@ async def api_metrics_reset(request: Request) -> Response:
 
 
 async def api_live_check(request: Request) -> Response:
-    """What the live MCP server exposes and how Tidelink will use it (no account data)."""
+    """Every live MCP server, its tools and how Tidelink will use them (no account data, no secrets)."""
     ctx = _state(request)
     if not ctx.settings.live_configured:
         return JSONResponse({"configured": False, "data_mode": ctx.settings.data_mode})
     try:
         specs = await ctx.gateway.refresh_live_specs(force=True)
-    except Exception as exc:  # noqa: BLE001
-        reason = _root_cause(exc)
-        log.warning("Live MCP check failed: %s", reason)
-        return JSONResponse({"configured": True, "reachable": False, "error": reason}, 502)
+    except Exception as exc:  # noqa: BLE001 - no server answered
+        log.warning("Live MCP check failed: %s", _root_cause(exc))
+        return JSONResponse({"configured": True, "reachable": False, "systems": ctx.gateway.systems()}, 502)
     return JSONResponse(
         {
             "configured": True,
             "reachable": True,
             "data_mode": ctx.settings.data_mode,
+            "systems": ctx.gateway.systems(),
             "tools": [
                 {
                     "name": s.name,
+                    "server": s.server,
+                    "remote_name": s.remote_name,
+                    "group": s.group,
                     "kind": "read" if s.read_only else "action (needs Confirm)",
                     "account_inputs_filled_by_tidelink": list(s.hidden),
                     "inputs_from_model": sorted(set(s.input_schema.get("properties", {})) - set(s.hidden)),
@@ -332,6 +336,14 @@ async def api_live_check(request: Request) -> Response:
             ],
         }
     )
+
+
+async def api_systems(request: Request) -> Response:
+    """Connected systems for the UI panel (cached view; refreshed as chats run)."""
+    ctx = _state(request)
+    if not ctx.settings.live:
+        return JSONResponse({"data_mode": "sim", "systems": []})
+    return JSONResponse({"data_mode": "live", "systems": ctx.gateway.systems()})
 
 
 def _spa(static_dir: Path):
@@ -398,7 +410,15 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
         if settings.live:
             try:
                 live = await gateway.refresh_live_specs(force=True)
-                log.info("Live MCP tools: %s", ", ".join(live) or "(none)")
+                for system in gateway.systems():
+                    log.info(
+                        "Live MCP %s: %s, %d tools (%s)",
+                        system["name"],
+                        "reachable" if system["reachable"] else f"DOWN ({system['error']})",
+                        len(system["tools"]),
+                        ", ".join(system["groups"]) or "-",
+                    )
+                log.info("Live MCP tools available to the assistant: %d", len(live))
             except Exception as exc:  # noqa: BLE001 - start anyway; each turn retries
                 log.warning("Live MCP server not reachable at startup: %s", _root_cause(exc))
         log.info(
@@ -408,7 +428,9 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
             settings.app_env,
             llm.name,
             ",".join(ctx.scenarios),
-            f"live {display_url(settings.live_mcp_url)}" if settings.live else "sim",
+            "live " + ", ".join(f"{srv.name}={display_url(srv.url)}" for srv in settings.live_servers)
+            if settings.live
+            else "sim",
             "bearer" if settings.mcp_auth_required else "OFF",
         )
         async with mcp_server.session_manager.run():
@@ -429,6 +451,7 @@ def create_app(settings: Settings | None = None, llm: LlmClient | None = None) -
         Route("/api/metrics", api_metrics),
         Route("/api/metrics/reset", api_metrics_reset, methods=["POST"]),
         Route("/api/live/check", api_live_check),
+        Route("/api/systems", api_systems),
         *mcp_app.routes,  # Route("/mcp", ...) from the MCP SDK
     ]
     assets = settings.static_dir / "assets"

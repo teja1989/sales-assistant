@@ -37,7 +37,7 @@ flowchart LR
 4. **Agent loop** (`app/orchestrator.py`), up to `MAX_TOOL_ROUNDS` rounds:
    - Stream the model's text to the browser.
    - For each tool call: check the allowlist, clean arguments, inject `customer_id`.
-     - **Read tools** (`readOnlyHint=true`) run in parallel through the MCP gateway; results stream as cards.
+     - **Read tools** (simulator: `readOnlyHint=true`; live servers: a lookup verb in the tool name) run in parallel through the MCP gateway; results stream as cards.
      - **Action tools** become a pending action and a confirm card. Nothing executes yet.
    - Feed results back to the model; repeat until it answers without tool calls.
    - Check every dollar amount in the reply against tool results.
@@ -62,7 +62,7 @@ flowchart LR
 `DATA_MODE` decides, for the whole app:
 
 - **sim:** tools are our in-process MCP simulator; the scenario's allowlist picks which ones the model sees.
-- **live:** tools are discovered from `LIVE_MCP_URL` (`tools/list`, refreshed every 5 minutes and after failures). Each becomes a read (`readOnlyHint: true`) or an action (needs Confirm). Inputs named like an account id are filled from the signed-in session and removed from the model's schema. Failures come back as tool errors; nothing falls back to simulated data. The UI badges every card with its source.
+- **live:** tools are discovered from every configured MCP server (`tools/list` in parallel, refreshed every 5 minutes and after failures) and merged into one toolset with model-safe, unique names; each tool remembers its server and real name, and its team from gateway-style prefixes. Lookups vs actions come from the tool name (with per-tool overrides), so servers need no changes. Account-like inputs are filled from the signed-in session and removed from the model's schema. Failures come back as tool errors; nothing falls back to simulated data. Every card shows its source system; `/api/systems` feeds the Connected systems panel.
 
 ## Why the model never sees `customer_id`
 

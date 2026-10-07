@@ -42,7 +42,12 @@ export function Home({ config }: { config: AppConfig | null }) {
           {config && (
             <p className="runtime">
               Model: <strong>{config.llm === "mock" ? "offline mock" : "Azure OpenAI"}</strong>. Data:{" "}
-              <strong>{config.data_source === "live" ? `live MCP (${config.live_host})` : "simulator"}</strong>.
+              <strong>
+                {config.data_source === "live"
+                  ? `live MCP: ${(config.live_servers ?? []).join(", ")}`
+                  : "simulator"}
+              </strong>
+              .
             </p>
           )}
         </section>

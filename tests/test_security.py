@@ -120,17 +120,20 @@ def test_vcap_user_provided_service(monkeypatch) -> None:
         "VCAP_SERVICES",
         (
             '{"user-provided":[{"name":"sales-assistant-secrets","credentials":'
-            '{"azure_openai_api_key":"from-vcap","live_mcp_token":"lt"}}]}'
+            '{"azure_openai_api_key":"from-vcap","live_mcp_url":"https://live.example.com/mcp","live_mcp_token":"lt"}}]}'
         ),
     )
     monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("LIVE_MCP_TOKEN", raising=False)
-    overrides = {k: v for k, v in TEST_ENV.items() if k not in ("AZURE_OPENAI_API_KEY", "LIVE_MCP_TOKEN")}
+    monkeypatch.delenv("LIVE_MCP_URL", raising=False)
+    overrides = {
+        k: v for k, v in TEST_ENV.items() if k not in ("AZURE_OPENAI_API_KEY", "LIVE_MCP_URL", "LIVE_MCP_TOKEN")
+    }
     from app.config import load_settings
 
     s = load_settings(overrides)
     assert s.azure_openai_api_key == "from-vcap"
-    assert s.live_mcp_token == "lt"
+    assert s.live_servers[0].token == "lt" and s.live_servers[0].name == "live-example-com"
 
 
 def test_pii_masking() -> None:
@@ -166,6 +169,6 @@ def test_mcp_auth_defaults_off_and_token_rules() -> None:
 
 
 def test_url_settings_validated(tmp_path) -> None:
-    with pytest.raises(ConfigError, match="LIVE_MCP_URL"):
+    with pytest.raises(ConfigError, match="live MCP server"):
         make_settings(LIVE_MCP_URL="https:///mcp")
     assert make_settings(LIVE_MCP_URL="api.example.com/mcp").live_mcp_url == "https://api.example.com/mcp"

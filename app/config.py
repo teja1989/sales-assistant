@@ -3,9 +3,9 @@
 The settings that matter (see .env.example); the same names locally and on Cloud Foundry:
     AZURE_OPENAI_ENDPOINT / _API_KEY / _DEPLOYMENT / _API_VERSION
                     Azure OpenAI via the official SDK (empty endpoint = offline mock model).
-    DATA_MODE       sim (default: built-in simulator, demo personas) | live (your MCP server only)
-    LIVE_MCP_URL    MCP server used when DATA_MODE=live
-    LIVE_MCP_TOKEN  optional token for it (sent as Authorization: Bearer)
+    DATA_MODE       sim (default: built-in simulator, demo personas) | live (your MCP servers only)
+    LIVE_MCP_URL    an MCP server used when DATA_MODE=live (LIVE_MCP_TOKEN optional, sent as Bearer)
+    LIVE_MCP_SERVERS more servers: name=url,name2=url2 (tokens: LIVE_MCP_TOKEN_<NAME>)
 Everything else has a sensible default; the optional knobs are listed in docs/configuration.md.
 
 Values come from (highest priority first):
@@ -23,7 +23,7 @@ import os
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
@@ -120,6 +120,16 @@ def _csv(value: str | None) -> list[str]:
 
 
 @dataclass(frozen=True)
+class LiveServer:
+    """One MCP server the assistant can use in live mode. `token` is sent as a bearer token today;
+    this is the one place to add client-id/secret authentication per server later."""
+
+    name: str
+    url: str
+    token: str = ""
+
+
+@dataclass(frozen=True)
 class Settings:
     app_env: Literal["local", "dev", "prod", "test"] = "local"
     app_name: str = "Tidelink"
@@ -152,9 +162,12 @@ class Settings:
     # In live mode the assistant uses whatever tools that server exposes, and the signed-in account
     # number is injected into any input named in live_customer_params (hidden from the model).
     data_mode: DataSource = "sim"
-    live_mcp_url: str = ""
-    live_mcp_token: str = ""
+    live_servers: tuple[LiveServer, ...] = ()
     live_mcp_timeout_s: float = 20.0
+    # Read vs action without any server change: tool names starting with a lookup verb run directly,
+    # everything else waits for the customer's Confirm. Override per tool by name.
+    live_read_tools: frozenset[str] = frozenset()
+    live_action_tools: frozenset[str] = frozenset()
     live_customer_params: tuple[str, ...] = (
         "customer_id",
         "customerId",
@@ -189,7 +202,12 @@ class Settings:
 
     @property
     def live_configured(self) -> bool:
-        return bool(self.live_mcp_url)
+        return bool(self.live_servers)
+
+    @property
+    def live_mcp_url(self) -> str:
+        """First live server's URL (kept for display and older callers)."""
+        return self.live_servers[0].url if self.live_servers else ""
 
     @property
     def data_source(self) -> DataSource:
@@ -246,9 +264,10 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
         mcp_server_token=mcp_token,
         mcp_allowed_hosts=_csv(get("MCP_ALLOWED_HOSTS")),
         data_mode=_data_mode(get("DATA_MODE")),
-        live_mcp_url=_with_scheme((get("LIVE_MCP_URL") or "").strip()),
-        live_mcp_token=(get("LIVE_MCP_TOKEN") or "").strip(),
+        live_servers=_live_servers(get),
         live_mcp_timeout_s=_float(get("LIVE_MCP_TIMEOUT_S"), 20.0),
+        live_read_tools=frozenset(_csv(get("LIVE_READ_TOOLS"))),
+        live_action_tools=frozenset(_csv(get("LIVE_ACTION_TOOLS"))),
         live_customer_params=tuple(_csv(get("LIVE_CUSTOMER_PARAMS")))
         or Settings.__dataclass_fields__["live_customer_params"].default,
         handoff_secret=secrets.token_urlsafe(32),
@@ -271,7 +290,10 @@ def load_settings(overrides: dict[str, str] | None = None) -> Settings:
 
 
 def _validate(s: Settings) -> None:
-    for name, url in (("AZURE_OPENAI_ENDPOINT", s.azure_openai_endpoint), ("LIVE_MCP_URL", s.live_mcp_url)):
+    urls = [("AZURE_OPENAI_ENDPOINT", s.azure_openai_endpoint)] + [
+        (f"live MCP server '{srv.name}'", srv.url) for srv in s.live_servers
+    ]
+    for name, url in urls:
         if url:
             parts = urlsplit(url)
             if parts.scheme not in ("http", "https") or not parts.hostname:
@@ -280,7 +302,7 @@ def _validate(s: Settings) -> None:
         problems = [
             msg
             for ok, msg in (
-                (s.live_mcp_url, "LIVE_MCP_URL (your MCP server)"),
+                (s.live_servers, "LIVE_MCP_URL or LIVE_MCP_SERVERS (your MCP servers)"),
                 (s.azure_openai_endpoint, "AZURE_OPENAI_* (the offline mock model only knows the simulator's tools)"),
                 (s.oauth_required, "OAUTH_REQUIRED=true (sign-in provides the account number)"),
             )
@@ -308,6 +330,35 @@ def display_url(url: str) -> str:
     parts = urlsplit(url)
     port = f":{parts.port}" if parts.port else ""
     return f"{parts.scheme}://{parts.hostname}{port}{parts.path}"
+
+
+def _live_servers(get: Any) -> tuple[LiveServer, ...]:
+    """LIVE_MCP_URL (+ LIVE_MCP_NAME, LIVE_MCP_TOKEN) and/or LIVE_MCP_SERVERS=name=url,... with
+    per-server tokens in LIVE_MCP_TOKEN_<NAME>."""
+    servers: list[LiveServer] = []
+    url = (get("LIVE_MCP_URL") or "").strip()
+    if url:
+        name = _server_name(get("LIVE_MCP_NAME") or urlsplit(_with_scheme(url)).hostname or "mcp")
+        servers.append(LiveServer(name, _with_scheme(url), (get("LIVE_MCP_TOKEN") or "").strip()))
+    for entry in _csv(get("LIVE_MCP_SERVERS")):
+        if "=" not in entry:
+            raise ConfigError(f"LIVE_MCP_SERVERS entries must be name=url, got {entry!r}")
+        raw_name, _, raw_url = entry.partition("=")
+        name = _server_name(raw_name)
+        token = (get(f"LIVE_MCP_TOKEN_{name.upper().replace('-', '_')}") or "").strip()
+        servers.append(LiveServer(name, _with_scheme(raw_url.strip()), token))
+    names = [s.name for s in servers]
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    if duplicates:
+        raise ConfigError(f"Live MCP server names must be unique: {', '.join(duplicates)}")
+    return tuple(servers)
+
+
+def _server_name(raw: str) -> str:
+    name = "".join(ch if ch.isalnum() else "-" for ch in raw.strip().lower()).strip("-")
+    if not name:
+        raise ConfigError(f"Invalid live MCP server name: {raw!r}")
+    return name[:40]
 
 
 def _data_mode(value: str | None) -> DataSource:
